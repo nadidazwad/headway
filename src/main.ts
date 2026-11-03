@@ -533,7 +533,7 @@ function updateTags(dt: number): void {
     // The one who has just finished moves on to their next thought, for when we come back round.
     if (index >= 0 && list.length > 1) {
       const speaker = list[index]!;
-      speaker.thought = nextThought(shownBubbles.theme, speaker.thought, thoughtRng);
+      speaker.thought = nextThought(shownBubbles.theme, speaker.female, speaker.thought, thoughtRng);
       overlay.updateBubble(speaker);
     }
     openBubbleId = list[(index + 1) % list.length]!.id;
