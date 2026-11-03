@@ -25,13 +25,13 @@ export function buildRoad(b: Batch, context: Context, rng: Rng): void {
   for (let i = 0; i < patches; i++) {
     const px = rng.range(x0 + 3, x1 - 3);
     const pz = rng.range(-12, 12);
-    b.quad([px - rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], [px - rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], 0x6a696d, [0, 1, 0]);
+    b.quad([px - rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], [px - rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], 0xbcbbb5, [0, 1, 0]);
   }
 
   // The viaduct's shadow, thrown away from the sun onto the far lanes.
   b.part();
-  b.quad([x0, 0.028, -5], [x1, 0.028, -5], [x1, 0.028, -14], [x0, 0.028, -14], 0x696a70, [0, 1, 0]);
-  buildMedian(b, context, rng);
+  b.quad([x0, 0.028, -5], [x1, 0.028, -5], [x1, 0.028, -14], [x0, 0.028, -14], 0xb4b3ad, [0, 1, 0]);
+  buildMedian(b, context);
   for (const side of [1, -1]) buildPavement(b, context, side);
 }
 
@@ -43,32 +43,27 @@ function kerbStripes(b: Batch, context: Context, z: number, top: number, height:
   }
 }
 
-function buildMedian(b: Batch, context: Context, rng: Rng): void {
+function buildMedian(b: Batch, context: Context): void {
   kerbStripes(b, context, MEDIAN_HALF, 0.28, 0);
   kerbStripes(b, context, -MEDIAN_HALF, 0.28, 0);
   b.part();
   b.box(-CHUNK_LENGTH, 0, -MEDIAN_HALF, 0, 0.26, MEDIAN_HALF, city.soil);
-  // Marigolds and low hedge planted along the median, as under the real viaduct.
-  for (const distance of latticeIn(context, 0.9)) {
+  // A low clipped hedge along the median, as under the real viaduct.
+  for (const distance of latticeIn(context, 1.6)) {
     const x = localX(context, distance);
-    const nearPier = ((distance % 30) + 30) % 30 < 2.6 || ((distance % 30) + 30) % 30 > 27.4;
+    const nearPier = ((distance % 30) + 30) % 30 < 3 || ((distance % 30) + 30) % 30 > 27;
     if (nearPier) continue;
     b.part();
-    b.ellipsoid(x, 0.48, 0.9, 0.34, 0.25, 0.34, city.leafDark, 3, 6);
+    b.box(x - 0.7, 0.26, 0.45, x + 0.7, 0.72, 1.15, 0xcfd2c6);
     b.part();
-    b.ellipsoid(x, 0.48, -0.9, 0.34, 0.25, 0.34, city.leaf, 3, 6);
-    if (rng.chance(0.6)) {
-      b.part();
-      b.ellipsoid(x + rng.range(-0.15, 0.15), 0.72, 0.9 + rng.range(-0.15, 0.15), 0.11, 0.08, 0.11, rng.chance(0.7) ? city.marigold : 0xf0d15a, 2, 5);
-    }
+    b.box(x - 0.7, 0.26, -1.15, x + 0.7, 0.72, -0.45, 0xc6cabc);
   }
   // Iron rail along the near kerb.
-  for (const distance of latticeIn(context, 2.4)) {
+  for (const distance of latticeIn(context, 3)) {
     const x = localX(context, distance);
     b.part();
-    b.box(x - 0.025, 0.28, 1.28, x + 0.025, 1.08, 1.33, 0x77807f);
-    b.box(x - 2.4, 0.98, 1.285, x, 1.03, 1.325, 0x8f9896);
-    b.box(x - 2.4, 0.6, 1.295, x, 0.63, 1.315, 0x8f9896);
+    b.box(x - 0.02, 0.28, 1.3, x + 0.02, 1.02, 1.34, 0xa4a8a6);
+    b.box(x - 3, 0.96, 1.305, x, 1, 1.335, 0xb2b6b4);
   }
 }
 
@@ -81,16 +76,9 @@ function buildPavement(b: Batch, context: Context, side: number): void {
   b.box(-CHUNK_LENGTH, 0, z0, 0, 0.2, z1, city.sidewalk);
   kerbStripes(b, context, inner, 0.21, 0);
   // Pavers and the drain slabs that are never quite level.
-  for (const distance of latticeIn(context, 1.5)) {
+  for (const distance of latticeIn(context, 3)) {
     const x = localX(context, distance);
-    b.part();
     b.quad([x - 0.02, 0.205, z1], [x + 0.02, 0.205, z1], [x + 0.02, 0.205, z0], [x - 0.02, 0.205, z0], city.paver, [0, 1, 0]);
-  }
-  const slabZ = side * (SIDEWALK_HALF - 0.9);
-  for (const distance of latticeIn(context, 1.2)) {
-    const x = localX(context, distance);
-    b.part();
-    b.box(x - 1.15, 0.2, slabZ - 0.55, x, 0.24, slabZ + 0.55, 0xb7ae9c);
   }
 }
 
@@ -140,12 +128,12 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
         b.part();
         b.cylinder(x, 6.85, z + side * 0.32, 0.05, 0.05, 0.28, 0x9fb09f, 5);
       }
-      const cableColor = 0x24272a;
+      const cableColor = 0x5a5c5c;
       const next = x - poleStep;
-      const lines = 5;
+      const lines = side > 0 ? 3 : 2;
       for (let i = 0; i < lines; i++) {
         const y = 8.9 - (i % 2) * 0.7;
-        const offset = -0.7 + (i * 1.4) / (lines - 1);
+        const offset = lines > 1 ? -0.7 + (i * 1.4) / (lines - 1) : 0;
         const sag = 0.55 + (i % 3) * 0.18;
         b.part();
         b.cable(sagging([x, y + 0.08, z + offset], [next, y + 0.08, z + offset], sag), 0.012, cableColor, 3);

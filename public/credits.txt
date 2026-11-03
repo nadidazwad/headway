@@ -1,0 +1,35 @@
+Train of Thought, Dhaka Metro Line 6
+
+Models used here were simplified and redrawn in grey.
+
+People
+  Microsoft Rocketbox Avatar Library, Microsoft, MIT License
+  https://github.com/microsoft/Microsoft-Rocketbox
+  See people/LICENSE-rocketbox.txt
+
+Cars, vans and trucks
+  Car Kit, Kenney (kenney.nl), CC0
+
+Vehicles, mosques and tower blocks, under Creative Commons Attribution
+  Rickshaw by Sahjad Gaming Studio (CC Attribution)
+  https://sketchfab.com/3d-models/rickshaw-cf0ed3955bea45119ccacde916a6d54a
+  Indian Ricksha by anandmohan662 (CC Attribution)
+  https://sketchfab.com/3d-models/indian-ricksha-fd3eb0c9390c486ebaa4d9dc231c9c29
+  Lalbagh Fort Mosque by talatmahmud (CC Attribution)
+  https://sketchfab.com/3d-models/lalbagh-fort-mosque-fe0cefe46cb940c580ff2cba0f20aa77
+  Stylized Mosque by ChrisCLP (CC Attribution)
+  https://sketchfab.com/3d-models/stylized-mosque-f18722b66d1e459b94e189fb3f41781f
+  Generic Town Bus by own.guest (CC Attribution)
+  https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd
+  LOW POLY - ASIAN TOWER BLOCK by Colin.Greenall (CC Attribution)
+  https://sketchfab.com/3d-models/low-poly-asian-tower-block-694adf5094fa41f99a245ed822293f47
+  LOW POLY - SOVIET  APARTMENT BUILDING 8K by Colin.Greenall (CC Attribution)
+  https://sketchfab.com/3d-models/low-poly-soviet-apartment-building-8k-05229ac1d1f94e6c8cacaad91110c602
+  Low Poly Autorickshaw aka TukTuk by Nirmal.Justin (CC Attribution)
+  https://sketchfab.com/3d-models/low-poly-autorickshaw-aka-tuktuk-c7c87455ad014b3f9fc8c9fb2d164a61
+
+Facts about the line
+  Wikipedia, MRT Line 6; OpenStreetMap contributors (ODbL) for reference only.
+
+Licence texts
+  https://creativecommons.org/licenses/by/4.0/

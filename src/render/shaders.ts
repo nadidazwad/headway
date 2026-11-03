@@ -44,10 +44,12 @@ in float vDepth;
 uniform sampler2D uAtlas;
 uniform vec4 uCutPlane;
 uniform float uCutEnabled;
+uniform float uNeutral;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outData;
 
 const vec3 SUN = vec3(0.33, 0.80, 0.50);
+const vec3 PAPER = vec3(0.985, 0.992, 0.965);
 
 void main() {
   if (uCutEnabled > 0.5 && dot(vWorld, uCutPlane.xyz) > uCutPlane.w) discard;
@@ -63,8 +65,16 @@ void main() {
   }
 
   // Streets sit in the shade of what stands around them.
-  float streetShade = mix(0.84, 1.0, smoothstep(0.0, 9.0, vWorld.y));
-  vec3 lit = base * tone * tint * streetShade;
+  float streetShade = mix(0.95, 1.0, smoothstep(0.0, 9.0, vWorld.y));
+  vec3 lit;
+  if (uNeutral > 0.5) {
+    // The city is one grey drawing: authored colour decides only how light each part is.
+    float value = dot(base, vec3(0.3, 0.59, 0.11));
+    value = 0.36 + 0.64 * pow(value, 0.72);
+    lit = PAPER * value * mix(tone, 1.0, 0.28) * streetShade;
+  } else {
+    lit = base * tone * tint;
+  }
 
   outColor = vec4(lit, 1.0);
   vec3 nv = normalize(vNormalView);
@@ -109,9 +119,9 @@ void main() {
 
   // Orthographic depth is exactly planar on a flat face, so its second difference is zero.
   // Anything left over is a real edge, however steep the face.
-  float threshold = 0.05 + abs(c.z) * 0.0035;
+  float threshold = 0.07 + abs(c.z) * 0.0035;
   float depthLine = max(depthEdge(c.z, l.z, r.z, threshold), depthEdge(c.z, d.z, u.z, threshold));
-  float normalLine = smoothstep(0.22, 0.6, length(l.xy - r.xy) + length(d.xy - u.xy));
+  float normalLine = smoothstep(0.42, 1.05, length(l.xy - r.xy) + length(d.xy - u.xy));
   float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * uFineInk;
   float line = max(depthLine * 0.9, max(normalLine * 0.75, partLine));
 

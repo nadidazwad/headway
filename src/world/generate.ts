@@ -1,12 +1,11 @@
+import type { Assets } from "../assets";
 import { Batch, type MeshData } from "../geometry";
-import { stationStops } from "../line6";
 import { Rng, hashSeed } from "../shared/rng";
 import { apartmentBlock, brickBlock, glassTower, type Plot } from "./buildings";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, type Context } from "./layout";
 import { palm, tree } from "./nature";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
-import { STATION_HALF, buildStation } from "./station";
 import { buildViaduct } from "./viaduct";
 
 export interface ChunkData {
@@ -40,7 +39,7 @@ class Pieces {
 /** Tallest a building may stand here without hiding the train from any camera in the tour. */
 function heightLimit(z: number): number {
   if (z < 0) return 200;
-  return z * 0.52;
+  return 3.5 + z * 0.36;
 }
 
 function lodAt(z: number): 0 | 1 | 2 {
@@ -49,7 +48,16 @@ function lodAt(z: number): 0 | 1 | 2 {
   return distance < 62 ? 0 : distance < 110 ? 1 : 2;
 }
 
-function fillRow(pieces: Pieces, rng: Rng, x0: number, x1: number, z0: number, z1: number, streetFront: boolean, gaps: Array<[number, number]>): void {
+/** A downloaded landmark or tower, standing on the plot's centre with its long side to the road. */
+function propOnPlot(b: Batch, assets: Assets, key: string, plot: Plot, lod: string, tone: number): boolean {
+  if (!assets.hasProp(key)) return false;
+  const [width, height, depth] = assets.propSize(key);
+  if (width > plot.x1 - plot.x0 + 1 || depth > plot.z1 - plot.z0 + 6 || height > plot.maxHeight + 12) return false;
+  b.at((plot.x0 + plot.x1) / 2, 0, (plot.z0 + plot.z1) / 2, () => b.stamp(assets.prop(key, lod), tone));
+  return true;
+}
+
+function fillRow(pieces: Pieces, assets: Assets, rng: Rng, x0: number, x1: number, z0: number, z1: number, streetFront: boolean, gaps: Array<[number, number]>): void {
   let cursor = x0;
   while (cursor < x1 - 5) {
     const gap = gaps.find(([a, b2]) => cursor >= a - 3 && cursor < b2);
@@ -76,8 +84,14 @@ function fillRow(pieces: Pieces, rng: Rng, x0: number, x1: number, z0: number, z
     };
     const distance = Math.abs((z0 + z1) / 2);
     const roll = rng.next();
-    if (roll > 0.955 && plot.lod <= 1 && width > 14) {
+    const assetLod = plot.lod === 0 ? "hi" : "lo";
+    if (roll > 0.982 && propOnPlot(b, assets, rng.chance(0.6) ? "mosque_lalbagh" : "mosque_stylized", { ...plot, x1: plot.x0 + 40 }, assetLod, 1)) {
+      cursor += 34;
+      continue;
+    } else if (roll > 0.955 && plot.lod <= 1 && width > 14) {
       mosque(b, plot, rng);
+    } else if (roll > 0.88 && plot.lod <= 1 && propOnPlot(b, assets, rng.chance(0.5) ? "tower_asian" : "tower_soviet", plot, assetLod, 1.05)) {
+      // A real downloaded tower block standing among the generated ones.
     } else if (roll > 0.93 && plot.lod === 0 && width > 12) {
       pond(b, plot, rng);
     } else if (roll < 0.05 && plot.lod === 0) {
@@ -101,7 +115,7 @@ function fillRow(pieces: Pieces, rng: Rng, x0: number, x1: number, z0: number, z
 }
 
 /** Builds one stretch of the endless line. Same seed and index, same bytes. */
-export function generateChunk(seed: number, index: number): ChunkData {
+export function generateChunk(seed: number, index: number, assets: Assets): ChunkData {
   const start = index * CHUNK_LENGTH;
   const context: Context = { seed, chunk: index, start };
   const rng = new Rng(hashSeed(seed, index));
@@ -109,13 +123,8 @@ export function generateChunk(seed: number, index: number): ChunkData {
   const street = new Batch(1 << 15);
   const pieces = new Pieces();
 
-  const stops = stationStops(start - CHUNK_LENGTH, start + CHUNK_LENGTH * 2);
-  const stationCenters = stops.map((stop) => -(stop.center - start));
-  const inStation = (x: number): boolean => stationCenters.some((center) => Math.abs(x - center) < STATION_HALF);
-
   buildRoad(street, context, rng);
-  buildViaduct(b, context, inStation);
-  for (const stop of stops) buildStation(b, context, stop, rng);
+  buildViaduct(b, context);
 
   const gaps: Array<[number, number]> = [];
   if (rng.chance(0.42)) {
@@ -126,24 +135,24 @@ export function generateChunk(seed: number, index: number): ChunkData {
   }
   buildStreetFurniture(street, context, rng, (x) => !gaps.some(([a, c]) => x > a && x < c));
 
-  // Street trade and the odd foot-over-bridge, away from stations that already bridge the road.
-  const clear = (x: number): boolean => !inStation(x) && !gaps.some(([a, c]) => x > a - 3 && x < c + 3);
+  // Street trade and the odd foot-over-bridge.
+  const clear = (x: number): boolean => !gaps.some(([a, c]) => x > a - 3 && x < c + 3);
   for (let i = 0; i < 3; i++) {
     const x = rng.range(-CHUNK_LENGTH + 3, -3);
     if (!clear(x)) continue;
     const side = rng.chance(0.5) ? 1 : -1;
-    if (rng.chance(0.55)) teaStall(street, x, side, rng);
-    else fruitCart(street, x, side, rng);
+    if (rng.chance(0.55)) teaStall(street, assets, x, side, rng);
+    else fruitCart(street, assets, x, side, rng);
   }
   if (rng.chance(0.16)) {
     const x = rng.range(-CHUNK_LENGTH + 8, -8);
-    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(street, x, rng);
+    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(street, assets, x, rng);
   }
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;
   const rowFront = (from: number, to: number, first: boolean): void => {
-    fillRow(pieces, rng, xMin, 0, from, to, first, gaps);
+    fillRow(pieces, assets, rng, xMin, 0, from, to, first, gaps);
   };
   let z = FRONT_ROW;
   let first = true;
@@ -157,7 +166,7 @@ export function generateChunk(seed: number, index: number): ChunkData {
   first = true;
   while (z > FAR_BACK + 12) {
     const depth = rng.range(15, 24);
-    fillRow(pieces, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, false, gaps);
+    fillRow(pieces, assets, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, false, gaps);
     z -= depth + rng.range(4.5, 7);
     first = false;
   }

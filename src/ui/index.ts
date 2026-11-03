@@ -1,1 +1,1 @@
-export { createOverlay, type Overlay, type Language } from "./overlay";
+export { createOverlay, type CalloutLabel, type Overlay } from "./overlay";

@@ -1,39 +1,19 @@
 import type { Batch } from "../geometry";
 import type { Rng } from "../shared/rng";
-import { drawPerson } from "../people";
+import type { Assets, PersonPose } from "../assets";
 import { awnings, city } from "../shared/palette";
 import { posterUv } from "../signs/regions";
 import { ROAD_HALF, SIDEWALK_HALF } from "./layout";
 import type { Plot } from "./buildings";
 import { tree } from "./nature";
 
-const LOOKS = [
-  { outfit: "shirt", female: false, hijab: false, palette: [0xf1eee4, 0x2d3a4a] },
-  { outfit: "panjabi", female: false, hijab: false, palette: [0xe3d7ba, 0xf2efe6] },
-  { outfit: "salwar", female: true, hijab: false, palette: [0xc8413a, 0xe07a2f] },
-  { outfit: "saree", female: true, hijab: false, palette: [0x2f8f6b, 0x2f8f6b] },
-  { outfit: "burqa", female: true, hijab: true, palette: [0x262a2e, 0x262a2e] },
-  { outfit: "tshirt", female: false, hijab: false, palette: [0x2f6fb0, 0x39424a] },
-  { outfit: "salwar", female: true, hijab: true, palette: [0xd86a9a, 0x6d5aa8] },
-  { outfit: "school", female: true, hijab: false, palette: [0xf6f4ec, 0x20304f] },
-  { outfit: "lungi", female: false, hijab: false, palette: [0x8fb1cf, 0x5a5346] },
-] as const;
+const IDLE_POSES: readonly PersonPose[] = ["stand", "look", "phone", "music", "bag"];
 
-/** Somebody standing about: on a platform, at a tea stall, on a bridge. */
-export function bystander(b: Batch, x: number, y: number, z: number, facing: number, rng: Rng, seated = false): void {
-  const look = rng.pick(LOOKS);
-  b.at(x, y, z, () => {
-    drawPerson(b, {
-      outfit: look.outfit,
-      pose: seated ? "seated" : rng.chance(0.4) ? "phone" : "standing",
-      female: look.female,
-      hijab: look.hijab,
-      backpack: !seated && rng.chance(0.2),
-      tone: rng.pick([0xb88a63, 0xa97a54, 0xc99d76, 0x8f6443]),
-      palette: [look.palette[0], look.palette[1]],
-      hair: 0x1d1a18,
-    });
-  }, facing);
+/** Somebody standing about, or sat down: at a tea stall, on a bridge. */
+export function bystander(b: Batch, assets: Assets, x: number, y: number, z: number, facing: number, rng: Rng, seated = false): void {
+  const avatar = rng.int(0, assets.avatars.length - 1);
+  const pose = seated ? "sit" : rng.pick(IDLE_POSES);
+  b.at(x, y, z, () => b.stamp(assets.person(avatar, pose, "lo")), facing);
 }
 
 /** A neighbourhood mosque: mint and white, dome and a slender minaret with its balconies. */
@@ -129,7 +109,7 @@ export function pond(b: Batch, plot: Plot, rng: Rng): void {
 }
 
 /** A tea stall on the pavement: lean-to, kettle, biscuits in jars, a bench and two customers. */
-export function teaStall(b: Batch, x: number, side: number, rng: Rng): void {
+export function teaStall(b: Batch, assets: Assets, x: number, side: number, rng: Rng): void {
   const z = side * (ROAD_HALF + 2.9);
   const w = 2.1;
   const d = 1.1;
@@ -158,12 +138,12 @@ export function teaStall(b: Batch, x: number, side: number, rng: Rng): void {
   const benchZ = z - side * 1.1;
   b.part();
   b.box(x - 1.3, y, benchZ - 0.12, x + 1.3, y + 0.42, benchZ + 0.12, 0x6e5a43);
-  bystander(b, x - 0.6, y, benchZ, 0, rng, true);
-  if (rng.chance(0.6)) bystander(b, x + 0.5, y, benchZ, 0.3, rng, true);
+  bystander(b, assets, x - 0.6, y, benchZ, 0, rng, true);
+  if (rng.chance(0.6)) bystander(b, assets, x + 0.5, y, benchZ, 0.3, rng, true);
 }
 
 /** A fruit cart, heaped with whatever is in season. */
-export function fruitCart(b: Batch, x: number, side: number, rng: Rng): void {
+export function fruitCart(b: Batch, assets: Assets, x: number, side: number, rng: Rng): void {
   const z = side * (ROAD_HALF + 1.5);
   const y = 0.22;
   b.part();
@@ -178,14 +158,14 @@ export function fruitCart(b: Batch, x: number, side: number, rng: Rng): void {
     const r = rng.range(0.07, 0.11);
     b.ellipsoid(x + rng.range(-0.85, 0.85), y + 0.76 + rng.range(0, 0.14), z + rng.range(-0.34, 0.34), r, r, r, fruit, 3, 6);
   }
-  bystander(b, x + 1.35, y, z - side * 0.2, side > 0 ? 0.2 : 2.9, rng);
+  bystander(b, assets, x + 1.35, y, z - side * 0.2, side > 0 ? 0.2 : 2.9, rng);
 }
 
 /**
  * A foot-over-bridge across the main road: stairs at each end, a caged deck, and people crossing.
  * The sheer number of them was the reference video's other visual idea, here in Dhaka's own steel.
  */
-export function footBridge(b: Batch, x: number, rng: Rng): void {
+export function footBridge(b: Batch, assets: Assets, x: number, rng: Rng): void {
   const deckY = 6.6;
   const halfZ = SIDEWALK_HALF - 2.4;
   const width = 2.6;
@@ -238,6 +218,6 @@ export function footBridge(b: Batch, x: number, rng: Rng): void {
   b.quad([x0 - 0.05, deckY + 0.24, 4.9], [x0 - 0.05, deckY + 0.24, -4.9], [x0 - 0.05, deckY + 1.01, -4.9], [x0 - 0.05, deckY + 1.01, 4.9], 0xffffff, [-1, 0, 0], posterUv(rng.int(0, 5)));
   const crossers = rng.int(2, 6);
   for (let i = 0; i < crossers; i++) {
-    bystander(b, x + rng.range(-0.6, 0.6), deckY + 0.02, rng.range(-halfZ + 1, halfZ - 1), rng.chance(0.5) ? 0 : Math.PI, rng);
+    bystander(b, assets, x + rng.range(-0.6, 0.6), deckY + 0.02, rng.range(-halfZ + 1, halfZ - 1), rng.chance(0.5) ? 0 : Math.PI, rng);
   }
 }

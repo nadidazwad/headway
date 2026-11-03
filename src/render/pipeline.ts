@@ -29,9 +29,11 @@ export interface CutPlane {
 
 export interface Pipeline {
   renderer: WebGLRenderer;
-  /** The one material every solid in the world uses. */
+  /** The grey material every part of the city and its people use. */
   solid: ShaderMaterial;
-  /** A copy whose geometry can be cut away by a moving plane. */
+  /** The train's own material: the one thing in the world that keeps its colour. */
+  colored: ShaderMaterial;
+  /** A coloured copy whose geometry can be cut away by a moving plane. */
   cuttable(): ShaderMaterial;
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
@@ -81,15 +83,20 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       ...shared,
       uCutPlane: { value: new Vector4() },
       uCutEnabled: { value: 0 },
+      uNeutral: { value: 1 },
     },
   });
 
-  const cuttable = (): ShaderMaterial => {
+  const copy = (neutral: number): ShaderMaterial => {
     const material = solid.clone();
     material.uniforms.uAtlas = shared.uAtlas;
     material.uniforms.uFocusDepth = shared.uFocusDepth;
+    material.uniforms.uNeutral!.value = neutral;
     return material;
   };
+  const colored = copy(0);
+
+  const cuttable = (): ShaderMaterial => copy(0);
 
   const composite = new ShaderMaterial({
     glslVersion: GLSL3,
@@ -102,10 +109,10 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uData: { value: target.textures[1] },
       uTexel: { value: new Vector2() },
       uLineScale: { value: 1 },
-      uSkyTop: { value: new Color(0xf6efe0) },
-      uSkyBottom: { value: new Color(0xf7ecd9) },
-      uInk: { value: new Color(0.42, 0.42, 0.45) },
-      uHaze: { value: new Vector2(6, 88) },
+      uSkyTop: { value: new Color(0xf7f9f2) },
+      uSkyBottom: { value: new Color(0xf6f8f0) },
+      uInk: { value: new Color(0.42, 0.42, 0.41) },
+      uHaze: { value: new Vector2(12, 78) },
       uFineInk: { value: 0.6 },
     },
   });
@@ -130,6 +137,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
   return {
     renderer,
     solid,
+    colored,
     cuttable,
     setCut(material, cut) {
       if (!cut) {

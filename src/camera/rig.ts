@@ -23,7 +23,7 @@ export interface CameraRig {
   ray(px: number, py: number, viewWidth: number, viewHeight: number): { origin: Vector3; direction: Vector3 };
 }
 
-const DISTANCE = 520;
+const DISTANCE = 640;
 const scratch = new Vector3();
 
 /** A critically damped spring per quantity keeps every interrupt smooth, wherever it starts. */
@@ -37,7 +37,7 @@ function damp(value: number, velocity: { v: number }, target: number, omega: num
 }
 
 export function createCameraRig(start: CameraPose): CameraRig {
-  const camera = new OrthographicCamera(-1, 1, 1, -1, 1, 1800);
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 1, 2200);
   const target: CameraPose = { ...start, focus: start.focus.clone() };
   const pose: CameraPose = { ...start, focus: start.focus.clone() };
   const speed = {

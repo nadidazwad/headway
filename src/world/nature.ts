@@ -2,32 +2,55 @@ import type { Batch } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
 
-/** A wide rain tree or, now and then, a krishnachura in flame-red bloom. */
+/** A shallow faceted parasol of leaves: flat planes read as drawing, where smooth balls read as CG. */
+function parasol(b: Batch, x: number, y: number, z: number, r: number, h: number, color: number, spin: number): void {
+  const sides = 9;
+  b.part();
+  for (let i = 0; i < sides; i++) {
+    const a0 = spin + (i / sides) * Math.PI * 2;
+    const a1 = spin + ((i + 1) / sides) * Math.PI * 2;
+    const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    // Upper cone.
+    b.quad([x + c0 * r, y, z + s0 * r], [x + c1 * r, y, z + s1 * r], [x, y + h, z], [x, y + h, z], color, [(c0 + c1) * 0.5, 1.2, (s0 + s1) * 0.5]);
+    // Rim, dropping a little: the canopy has thickness.
+    b.quad([x + c0 * r, y, z + s0 * r], [x + c1 * r, y, z + s1 * r], [x + c1 * r * 0.93, y - h * 0.34, z + s1 * r * 0.93], [x + c0 * r * 0.93, y - h * 0.34, z + s0 * r * 0.93], color, [(c0 + c1) * 0.5, -0.1, (s0 + s1) * 0.5]);
+  }
+}
+
+/** A wide rain tree or, now and then, a krishnachura: overlapping parasols on a forked trunk. */
 export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, detail = true): void {
   const blossom = rng.chance(0.14);
-  const leaves = blossom ? [city.blossom, 0xe5613a, 0xc93f27] : [city.leaf, city.leafDark, city.leafLight];
+  const leaves = blossom ? [0xcfcfc8, 0xdedad0, 0xc2c1b9] : [0xbfc3b6, 0xa9ae9f, 0xd2d4c8];
   b.part();
-  b.bar([x, 0, z], [x + rng.range(-0.3, 0.3), height * 0.55, z + rng.range(-0.3, 0.3)], height * 0.035, height * 0.022, city.bark, 6);
-  const spread = height * 0.5;
-  const bud = detail ? 9 : 5;
-  // Rain trees spread wide and flat: a dark under-canopy with brighter clumps catching the sun.
-  const under = detail ? 7 : 3;
-  for (let i = 0; i < under; i++) {
-    const angle = (i / under) * Math.PI * 2 + rng.range(-0.3, 0.3);
-    const radius = i === 0 ? 0 : spread * rng.range(0.45, 0.72);
-    const r = spread * rng.range(0.42, 0.56);
-    b.part();
-    b.ellipsoid(x + Math.cos(angle) * radius, height * 0.72, z + Math.sin(angle) * radius, r, r * 0.52, r, leaves[1]!, 5, bud + 3);
+  const forkY = height * 0.46;
+  const forkX = x + rng.range(-0.3, 0.3);
+  const forkZ = z + rng.range(-0.3, 0.3);
+  b.bar([x, 0, z], [forkX, forkY, forkZ], height * 0.04, height * 0.026, city.bark, 7);
+  const spread = height * 0.46;
+  const crowns = detail ? rng.int(4, 6) : 2;
+  for (let i = 0; i < crowns; i++) {
+    const angle = (i / crowns) * Math.PI * 2 + rng.range(-0.4, 0.4);
+    const radius = i === 0 ? 0 : spread * rng.range(0.42, 0.68);
+    const cx = x + Math.cos(angle) * radius;
+    const cz = z + Math.sin(angle) * radius;
+    const y = height * (i === 0 ? 0.86 : rng.range(0.66, 0.78));
+    if (i > 0 && detail) {
+      b.part();
+      b.bar([forkX, forkY, forkZ], [cx, y - 0.2, cz], height * 0.018, height * 0.01, city.bark, 5);
+    }
+    parasol(b, cx, y, cz, spread * rng.range(0.58, 0.8) * (i === 0 ? 1.1 : 1), height * 0.17, leaves[i % leaves.length]!, rng.range(0, 6));
   }
-  if (!detail) return;
-  const tufts = rng.int(22, 34);
-  for (let i = 0; i < tufts; i++) {
-    const angle = rng.range(0, Math.PI * 2);
-    const radius = Math.sqrt(rng.next()) * spread * 1.08;
-    const r = spread * rng.range(0.1, 0.2);
-    const dome = 1 - (radius / (spread * 1.1)) ** 2;
+}
+
+/** A fir of stacked cones, for the small park plots. */
+export function fir(b: Batch, x: number, z: number, height: number, _rng: Rng): void {
+  b.part();
+  b.bar([x, 0, z], [x, height * 0.2, z], height * 0.03, height * 0.024, city.bark, 6);
+  const tiers = 4;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / tiers;
     b.part();
-    b.ellipsoid(x + Math.cos(angle) * radius, height * (0.74 + 0.2 * dome), z + Math.sin(angle) * radius, r, r * 0.7, r, i % 3 === 0 ? leaves[2]! : leaves[0]!, 4, bud);
+    b.cylinder(x, height * (0.14 + t * 0.66), z, height * (0.26 - t * 0.15), 0.01, height * 0.34, 0xc2c6b8, 9, false);
   }
 }
 

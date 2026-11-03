@@ -1,17 +1,13 @@
 import { CanvasTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace } from "three";
-import { LINE_GREEN } from "../shared/palette";
-import { STATIONS } from "../line6";
 import {
   ATLAS_SIZE,
   BILLBOARDS,
   BILLBOARD_CELL,
-  BOARD_CELL,
   POSTERS,
   POSTER_CELL,
   SHOP_CELL,
   SHOP_NAMES,
   billboardCell,
-  boardCell,
   posterCell,
   shopCell,
 } from "./regions";
@@ -44,31 +40,6 @@ function drawShop(ctx: CanvasRenderingContext2D, index: number): void {
   ctx.textBaseline = "middle";
   fitText(ctx, name, 700, BANGLA, 46, w - 36);
   ctx.fillText(name, x + w / 2, y + h / 2 + 2);
-}
-
-function drawBoard(ctx: CanvasRenderingContext2D, index: number): void {
-  const station = STATIONS[index]!;
-  const [x, y] = boardCell(index);
-  const { w, h } = BOARD_CELL;
-  const green = `#${LINE_GREEN.toString(16).padStart(6, "0")}`;
-  ctx.fillStyle = green;
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#ffffff";
-  ctx.beginPath();
-  ctx.arc(x + 52, y + h / 2, 32, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = green;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `700 40px ${LATIN}`;
-  ctx.fillText("M", x + 52, y + h / 2 + 2);
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "left";
-  fitText(ctx, station.bn, 700, BANGLA, 60, 500);
-  ctx.fillText(station.bn, x + 108, y + h / 2 + 3);
-  ctx.textAlign = "right";
-  fitText(ctx, station.en.toUpperCase(), 500, LATIN, 42, 380);
-  ctx.fillText(station.en.toUpperCase(), x + w - 26, y + h / 2 + 2);
 }
 
 function drawBillboard(ctx: CanvasRenderingContext2D, index: number): void {
@@ -116,7 +87,6 @@ export async function createAtlas(maxAnisotropy: number): Promise<CanvasTexture>
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
   SHOP_NAMES.forEach((_, index) => drawShop(ctx, index));
-  STATIONS.forEach((_, index) => drawBoard(ctx, index));
   BILLBOARDS.forEach((_, index) => drawBillboard(ctx, index));
   POSTERS.forEach((_, index) => drawPoster(ctx, index));
   const texture = new CanvasTexture(canvas);

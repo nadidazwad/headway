@@ -1,5 +1,3 @@
-import { STATIONS } from "../line6";
-
 /**
  * Everything printed in the world lives on one atlas. This half is pure layout, shared with the
  * world worker. Atlas UVs are [left, top, right, bottom] with v = 0 at the top row.
@@ -56,23 +54,16 @@ export const POSTERS = [
 const rect = (x: number, y: number, w: number, h: number): Uv => [x / ATLAS_SIZE, y / ATLAS_SIZE, (x + w) / ATLAS_SIZE, (y + h) / ATLAS_SIZE];
 
 export const SHOP_CELL = { w: 512, h: 72 };
-export const BOARD_CELL = { w: 1024, h: 96 };
 export const BILLBOARD_CELL = { w: 512, h: 170 };
 export const POSTER_CELL = { w: 128, h: 170 };
 
 const SHOP_TOP = 4;
-const BOARD_TOP = SHOP_TOP + 6 * SHOP_CELL.h + 8;
-const BILLBOARD_TOP = BOARD_TOP + 8 * BOARD_CELL.h + 8;
+const BILLBOARD_TOP = SHOP_TOP + 6 * SHOP_CELL.h + 8;
 const POSTER_TOP = BILLBOARD_TOP + 2 * BILLBOARD_CELL.h + 8;
 
 export function shopCell(index: number): [number, number] {
   const i = index % SHOP_NAMES.length;
   return [4 + (i % 4) * SHOP_CELL.w, SHOP_TOP + Math.floor(i / 4) * SHOP_CELL.h];
-}
-
-export function boardCell(index: number): [number, number] {
-  const i = index % STATIONS.length;
-  return [4 + (i % 2) * BOARD_CELL.w, BOARD_TOP + Math.floor(i / 2) * BOARD_CELL.h];
 }
 
 export function billboardCell(index: number): [number, number] {
@@ -86,8 +77,5 @@ export function posterCell(index: number): [number, number] {
 }
 
 export const shopUv = (index: number): Uv => rect(...shopCell(index), SHOP_CELL.w, SHOP_CELL.h);
-export const boardUv = (index: number): Uv => rect(...boardCell(index), BOARD_CELL.w, BOARD_CELL.h);
 export const billboardUv = (index: number): Uv => rect(...billboardCell(index), BILLBOARD_CELL.w, BILLBOARD_CELL.h);
 export const posterUv = (index: number): Uv => rect(...posterCell(index), POSTER_CELL.w, POSTER_CELL.h);
-
-export const stationIndex = (name: string): number => STATIONS.findIndex((station) => station.en === name);

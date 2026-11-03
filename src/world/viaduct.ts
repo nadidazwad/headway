@@ -4,8 +4,8 @@ import { posterUv } from "../signs/regions";
 import { CHUNK_LENGTH, DECK_HALF, DECK_Y, RAIL_Y, SPAN, TRACK_Z, latticeIn, localX, type Context } from "./layout";
 
 const SEGMENT = 3;
-const PIER_TOP = 10.6;
-const GIRDER_BOTTOM = 12.1;
+const PIER_TOP = RAIL_Y - 4.4;
+const GIRDER_BOTTOM = RAIL_Y - 2.9;
 
 /** One precast box-girder segment, seen from outside: its web sloping in under the deck. */
 function girderSegment(b: Batch, x0: number, x1: number): void {
@@ -24,6 +24,40 @@ function girderSegment(b: Batch, x0: number, x1: number): void {
   b.quad(a0, a1, [x1, DECK_Y, flange], [x0, DECK_Y, flange], concrete.deck, [0, 0, 1]);
 }
 
+/** A steel handrail on the near parapet: the crisp line the reference's deck is known by. */
+function handrail(b: Batch, context: Context): void {
+  const z = DECK_HALF - 0.06;
+  const y0 = DECK_Y + 0.86;
+  const steel = 0x8d918f;
+  for (const distance of latticeIn(context, 2.4)) {
+    const x = localX(context, distance);
+    b.part();
+    b.box(x - 0.025, y0, z - 0.025, x + 0.025, y0 + 1.02, z + 0.025, steel);
+  }
+  b.part();
+  b.box(-CHUNK_LENGTH, y0 + 1, z - 0.03, 0, y0 + 1.05, z + 0.03, 0xa6aaa8);
+  b.box(-CHUNK_LENGTH, y0 + 0.55, z - 0.016, 0, y0 + 0.58, z + 0.016, steel);
+  b.box(-CHUNK_LENGTH, y0 + 0.24, z - 0.016, 0, y0 + 0.27, z + 0.016, steel);
+}
+
+/** Bolted plates and junction boxes along the girder face, every few metres. */
+function girderFittings(b: Batch, context: Context): void {
+  const z = DECK_HALF + 0.02;
+  const top = DECK_Y - 0.1;
+  for (const distance of latticeIn(context, 6)) {
+    const x = localX(context, distance);
+    b.part();
+    b.box(x - 0.24, top - 0.42, z - 0.02, x + 0.24, top - 0.05, z + 0.2, 0xdedbd0);
+    b.part();
+    b.box(x - 0.16, top - 0.34, z + 0.2, x + 0.16, top - 0.13, z + 0.205, 0xc2bfb4);
+  }
+  for (const distance of latticeIn(context, 1.5, 0.75)) {
+    const x = localX(context, distance);
+    b.part();
+    b.box(x - 0.035, top - 0.3, z, x + 0.035, top - 0.23, z + 0.012, 0x7e7f7b);
+  }
+}
+
 function parapet(b: Batch, x0: number, x1: number, z: number, outward: number): void {
   const y0 = DECK_Y;
   const y1 = DECK_Y + 1.05;
@@ -34,7 +68,7 @@ function parapet(b: Batch, x0: number, x1: number, z: number, outward: number): 
 }
 
 function pier(b: Batch, x: number, number: number): void {
-  const w = 1.55;
+  const w = 1.75;
   const shaftColor = concrete.pier;
   b.part();
   b.block(x, 0, 0, w * 2.3, 0.28, w * 2.3, 0xb7b1a2);
@@ -46,11 +80,9 @@ function pier(b: Batch, x: number, number: number): void {
     [x + w - r, w], [x - w + r, w], [x - w, w - r], [x - w, -w + r],
   ];
   b.prism(outline, 0.28, PIER_TOP - 2.7, shaftColor);
-  for (let i = 0; i < 6; i++) {
-    const u = -0.75 + i * 0.3;
-    b.box(x + u - 0.05, 2.4, w, x + u + 0.05, PIER_TOP - 3.1, w + 0.015, concrete.stain);
-    b.box(x - w - 0.015, 2.4, u - 0.05, x - w, PIER_TOP - 3.1, u + 0.05, concrete.stain);
-  }
+  // The recessed panel Line 6's piers carry on each face, with its single flute line.
+  b.box(x - w * 0.62, 2.4, w, x + w * 0.62, PIER_TOP - 3.1, w + 0.012, 0xcbc6b9);
+  b.box(x - w - 0.012, 2.4, -w * 0.62, x - w, PIER_TOP - 3.1, w * 0.62, 0xbdb8ab);
   // Flared head under the deck: octagon widening towards the bearing shelf.
   b.part();
   const levels: Array<[number, number, number]> = [
@@ -102,7 +134,7 @@ function pier(b: Batch, x: number, number: number): void {
 
 const posterCount = (number: number): number => 2 + (number % 4);
 
-export function trackRun(b: Batch, x0: number, x1: number, z: number, context: Context): void {
+function trackRun(b: Batch, x0: number, x1: number, z: number, context: Context): void {
   const gauge = 1.435 / 2;
   // Ballastless track: plinth on the deck, with fastened rails on it.
   b.part();
@@ -128,9 +160,9 @@ export function trackRun(b: Batch, x0: number, x1: number, z: number, context: C
 function overhead(b: Batch, context: Context): void {
   const MAST = SPAN;
   const steel = 0x8b9396;
-  const dark = 0x62676a;
-  const wireTop = RAIL_Y + 5.7;
-  const contact = RAIL_Y + 4.65;
+  const dark = 0x7a7e80;
+  const wireTop = RAIL_Y + 6.3;
+  const contact = RAIL_Y + 5.25;
   for (const distance of latticeIn(context, MAST, 15)) {
     const x = localX(context, distance);
     for (const side of [1, -1]) {
@@ -139,7 +171,7 @@ function overhead(b: Batch, context: Context): void {
       b.part();
       b.block(x, DECK_Y + 1.05, z, 0.42, 0.14, 0.42, 0x7c8285);
       b.part();
-      b.bar([x, DECK_Y + 1.15, z], [x, RAIL_Y + 6.3, z], 0.095, 0.08, steel, 8);
+      b.bar([x, DECK_Y + 1.15, z], [x, RAIL_Y + 6.9, z], 0.095, 0.08, steel, 8);
       b.part();
       // Curved-top cantilever and the stay that holds its tip.
       b.bar([x, wireTop + 0.28, z], [x, wireTop + 0.28, track], 0.04, 0.04, steel, 5);
@@ -179,20 +211,19 @@ function overhead(b: Batch, context: Context): void {
 }
 
 /** The plain line between stations: girder, parapets, double track, overhead wires and piers. */
-export function buildViaduct(b: Batch, context: Context, skip: (x: number) => boolean): void {
+export function buildViaduct(b: Batch, context: Context): void {
   for (const distance of latticeIn(context, SPAN)) {
-    const x = localX(context, distance);
-    if (!skip(x)) pier(b, x, Math.round(distance / SPAN));
+    pier(b, localX(context, distance), Math.round(distance / SPAN));
   }
   for (const distance of latticeIn(context, SEGMENT)) {
     const x1 = localX(context, distance);
     const x0 = Math.max(x1 - SEGMENT, -CHUNK_LENGTH);
-    if (skip((x0 + x1) / 2)) continue;
     girderSegment(b, x0, Math.min(x1, 0));
     parapet(b, x0, Math.min(x1, 0), DECK_HALF, 1);
   }
-  const segments = stretches(skip);
-  for (const [x0, x1] of segments) {
+  const x0 = -CHUNK_LENGTH;
+  const x1 = 0;
+  {
     b.part();
     b.box(x0, DECK_Y - 0.04, -DECK_HALF, x1, DECK_Y, DECK_HALF, 0xb4afa3);
     // Cable troughs along the walkways.
@@ -206,20 +237,7 @@ export function buildViaduct(b: Batch, context: Context, skip: (x: number) => bo
     b.part();
     b.box(x0, DECK_Y - 0.92, DECK_HALF - 0.05, x1, DECK_Y - 0.78, DECK_HALF + 0.06, city.iron);
   }
-  if (segments.length) overhead(b, context);
-}
-
-function stretches(skip: (x: number) => boolean): Array<[number, number]> {
-  const out: Array<[number, number]> = [];
-  let start: number | null = null;
-  for (let x = -CHUNK_LENGTH; x <= 0; x += 1) {
-    const open = !skip(x);
-    if (open && start === null) start = x;
-    if (!open && start !== null) {
-      out.push([start, x]);
-      start = null;
-    }
-  }
-  if (start !== null) out.push([start, 0]);
-  return out;
+  overhead(b, context);
+  handrail(b, context);
+  girderFittings(b, context);
 }

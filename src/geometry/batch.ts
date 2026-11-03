@@ -12,20 +12,30 @@ export interface MeshData {
 
 export const STRIDE = 24;
 
-const COS60 = Math.cos(Math.PI / 3);
-const SIN60 = Math.sin(Math.PI / 3);
-const CAM_A: Vec3 = [0, 0.55, 0.84];
-const CAM_B: Vec3 = [-SIN60 * 0.84, 0.55, COS60 * 0.84];
+/** A baked mesh from the asset library, ready to be copied into a batch. */
+export interface Stampable {
+  count: number;
+  pos: Float32Array;
+  nor: Int8Array;
+  grey: Uint8Array;
+  part: Uint8Array;
+  index: Uint16Array | Uint32Array;
+}
+
+/** The camera's whole allowed range, the drag limits included. See camera/limits. */
+const cameraDirection = (azimuth: number, elevation: number): Vec3 => {
+  const az = (azimuth * Math.PI) / 180;
+  const el = (elevation * Math.PI) / 180;
+  return [-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+};
+const CORNERS: readonly Vec3[] = [cameraDirection(4, 12), cameraDirection(4, 50), cameraDirection(66, 12), cameraDirection(66, 50)];
 
 /**
  * The camera only ever looks from above, from the -X/+Z quadrant, so faces that can never
  * be seen are skipped. That removes about half the triangles of the whole city.
  */
 function canBeSeen(nx: number, ny: number, nz: number): boolean {
-  return (
-    nx * CAM_A[0] + ny * CAM_A[1] + nz * CAM_A[2] > -0.02 ||
-    nx * CAM_B[0] + ny * CAM_B[1] + nz * CAM_B[2] > -0.02
-  );
+  return CORNERS.some((d) => nx * d[0] + ny * d[1] + nz * d[2] > -0.02);
 }
 
 type Mat = number[];
@@ -201,7 +211,8 @@ export class Batch {
   /** A flat quad, wound to face the side its corners imply unless `facing` overrides it. */
   quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: number, facing?: Vec3, uv?: readonly [number, number, number, number]): void {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-    const vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+    // Use the far corner for the second edge, so a quad with two equal corners is still a triangle.
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     let nx = uy * vz - uz * vy;
     let ny = uz * vx - ux * vz;
     let nz = ux * vy - uy * vx;
@@ -364,6 +375,23 @@ export class Batch {
       const p = first + i * 2;
       this.pushIndices(p, p + 2, p + 1, p + 1, p + 2, p + 3);
     }
+    return this;
+  }
+
+  /** Copies a baked mesh in at the current transform, its grey scaled by `tone`. */
+  stamp(mesh: Stampable, tone = 1): this {
+    this.growVertices(mesh.count);
+    this.growIndices(mesh.index.length);
+    const first = this.vertexCount;
+    const base = this.partId;
+    for (let i = 0; i < mesh.count; i++) {
+      const g = Math.min(255, Math.round(mesh.grey[i]! * tone));
+      this.partId = ((base + mesh.part[i]! * 37) % 250) || 1;
+      this.vertex(mesh.pos[i * 3]!, mesh.pos[i * 3 + 1]!, mesh.pos[i * 3 + 2]!, mesh.nor[i * 3]! / 127, mesh.nor[i * 3 + 1]! / 127, mesh.nor[i * 3 + 2]! / 127, (g << 16) | (g << 8) | g);
+    }
+    this.partId = base;
+    this.part();
+    for (let i = 0; i < mesh.index.length; i++) this.indices[this.indexCount++] = first + mesh.index[i]!;
     return this;
   }
 

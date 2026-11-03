@@ -1,1 +1,0 @@
-export { drawPerson } from "./figure";

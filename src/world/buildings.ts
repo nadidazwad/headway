@@ -118,7 +118,7 @@ function drawBalcony(b: Batch, u: number, y: number, w: number, style: Style, lo
     b.box(u, y + 1.75, depth - 0.05, u + w, y + 1.78, depth - 0.025, city.iron);
     b.box(u, y + FLOOR - 0.1, depth - 0.05, u + w, y + FLOOR - 0.06, depth - 0.025, city.iron);
   }
-  if (rng.chance(0.42)) {
+  if (rng.chance(0.24)) {
     // Washing on a line across the balcony.
     b.part();
     let cursor = u + 0.2;
@@ -331,20 +331,21 @@ function drawRoof(b: Batch, x0: number, z0: number, x1: number, z1: number, y: n
 function pickStyle(rng: Rng, lod: number): Style {
   const wall = rng.pick(stucco);
   const layouts: Array<Bay["kind"][]> = [
-    ["window", "balcony", "window"],
-    ["balcony", "window", "balcony", "window"],
+    ["window", "window", "balcony", "window"],
+    ["window", "window", "window"],
+    ["balcony", "window", "window"],
     ["wide", "window"],
     ["window", "window", "blank"],
     ["balcony", "balcony", "slit"],
     ["wide", "balcony", "wide"],
   ];
-  const glass = rng.chance(0.5) ? city.glass : city.glassDark;
+  const glass = rng.chance(0.5) ? 0xd2dad9 : 0xc1cbca;
   return {
     wall,
     trim: rng.chance(0.5) ? 0xf4f0e4 : mixHex(wall, 0xffffff, 0.45),
     bays: rng.pick(layouts),
     bayWidth: rng.range(2.9, 4.2),
-    grilles: lod === 0 && rng.chance(0.65),
+    grilles: lod === 0 && rng.chance(0.32),
     frame: rng.chance(0.7) ? city.frame : rng.chance(0.5) ? 0x6e5c4c : 0xf0ece0,
     glass,
   };
@@ -410,7 +411,7 @@ export function glassTower(b: Batch, plot: Plot, rng: Rng): void {
   const floors = Math.min(Math.floor(plot.maxHeight / 3.6), rng.int(10, 24));
   const podium = 7.5;
   const height = podium + floors * 3.6;
-  const curtain = rng.pick([0x6d9db5, 0x5f8f9e, 0x7fa6b8, 0x5a8f83]);
+  const curtain = rng.pick([0xc9cec9, 0xd2d6d2, 0xc1c6c2, 0xd8dbd6]);
   const spandrel = mixHex(curtain, 0xffffff, 0.35);
   const inset = Math.min(1.4, width * 0.08);
   b.part();
@@ -434,7 +435,7 @@ export function glassTower(b: Batch, plot: Plot, rng: Rng): void {
         if (lod === 0) {
           for (let m = 0; m <= mullions; m++) {
             const u = (faceW * m) / mullions;
-            b.box(u - 0.035, 0, 0.02, u + 0.035, floors * 3.6, 0.07, 0x3e5560);
+            b.box(u - 0.035, 0, 0.02, u + 0.035, floors * 3.6, 0.07, 0x8a8f8c);
           }
         }
       } else {
@@ -445,7 +446,7 @@ export function glassTower(b: Batch, plot: Plot, rng: Rng): void {
   b.at(x0, 0, z1, () => {
     if (lod <= 1) {
       b.part();
-      b.panel(0.8, 0.1, width - 0.8, 4.2, 0.02, 0x3a4d59);
+      b.panel(0.8, 0.1, width - 0.8, 4.2, 0.02, 0x8c918e);
       b.part();
       b.box(0, 4.3, 0, width, 4.7, 1.6, 0xe7e2d5);
     }

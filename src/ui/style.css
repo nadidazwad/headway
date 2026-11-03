@@ -1,10 +1,8 @@
 :root {
   color-scheme: light;
-  --paper: #f7f1e3;
+  --paper: #f7f9f2;
   --ink: #23272a;
-  --hair: rgba(35, 39, 42, 0.55);
-  --green: #006747;
-  --red: #c23a33;
+  --hair: rgba(35, 39, 42, 0.62);
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --bangla: "Noto Sans Bengali", "IBM Plex Mono", sans-serif;
 }
@@ -38,6 +36,11 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
+  overflow: hidden;
+}
+
+[lang="bn"] {
+  font-family: var(--bangla);
 }
 
 .wire {
@@ -60,12 +63,9 @@ body {
   left: 0;
   top: 0;
   will-change: transform;
-  pointer-events: auto;
-  cursor: default;
   background: var(--paper);
   border: 1px solid var(--hair);
   box-shadow: 0 1px 0 rgba(35, 39, 42, 0.14);
-  transform-origin: 50% 100%;
   animation: tag-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -95,15 +95,14 @@ body {
   align-items: center;
   gap: 8px;
   padding: 6px;
-  max-width: min(60vw, 340px);
-  transition: padding 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto;
+  cursor: default;
 }
 
 .bubble-face {
   width: 28px;
   height: 28px;
   flex: none;
-  color: var(--ink);
 }
 
 .bubble-body {
@@ -111,7 +110,7 @@ body {
   grid-template-rows: 0fr;
   grid-template-columns: 0fr;
   opacity: 0;
-  transition: grid-template-rows 0.34s cubic-bezier(0.22, 1, 0.36, 1), grid-template-columns 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
+  transition: grid-template-rows 0.36s cubic-bezier(0.22, 1, 0.36, 1), grid-template-columns 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
 }
 
 .bubble-body > div {
@@ -128,31 +127,37 @@ body {
 
 .bubble-name {
   display: block;
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: 0.09em;
   white-space: nowrap;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
+}
+
+.bubble-latin {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  margin-left: 4px;
+  opacity: 0.68;
 }
 
 .bubble-line {
   display: block;
   width: max-content;
-  max-width: min(48vw, 270px);
-  font-size: 12.5px;
-  line-height: 1.38;
+  max-width: min(58vw, 290px);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.42;
 }
 
-[lang="bn"] .bubble-line {
-  font-family: var(--bangla);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-[lang="bn"] .bubble-name {
-  font-family: var(--bangla);
-  font-size: 11.5px;
-  letter-spacing: 0;
+.bubble-translation {
+  display: block;
+  width: max-content;
+  max-width: min(58vw, 290px);
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.36;
+  opacity: 0.74;
 }
 
 .callout {
@@ -166,7 +171,7 @@ body {
   gap: 8px;
   font-size: 9.5px;
   letter-spacing: 0.1em;
-  color: rgba(35, 39, 42, 0.72);
+  opacity: 0.72;
 }
 
 .callout-title {
@@ -181,234 +186,33 @@ body {
   white-space: nowrap;
 }
 
-[lang="bn"] .callout-title {
-  font-family: var(--bangla);
-  font-size: 17px;
-  letter-spacing: 0;
-}
-
-.chrome {
-  position: absolute;
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  pointer-events: none;
-}
-
-.chrome-brand {
-  left: 18px;
-  top: 16px;
-  background: var(--paper);
-  border: 1px solid var(--hair);
-  padding: 8px 12px;
-}
-
-.brand-title {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-[lang="bn"] .brand-title {
-  font-family: var(--bangla);
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.brand-sub {
-  margin-top: 2px;
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  color: rgba(35, 39, 42, 0.72);
-}
-
-.chrome-controls {
-  right: 18px;
-  top: 16px;
-  display: flex;
-  pointer-events: auto;
-  background: var(--paper);
-  border: 1px solid var(--hair);
-}
-
-.chrome button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.chrome button + button {
-  border-left: 1px solid var(--hair);
-}
-
-.chrome button:hover {
-  background: rgba(0, 103, 71, 0.1);
-}
-
-.chrome button:focus-visible {
-  outline: 2px solid var(--green);
-  outline-offset: -2px;
-}
-
-.chrome button[aria-pressed="true"] {
-  background: var(--green);
-  color: #fff;
-}
-
-.chrome-cars {
-  left: 50%;
-  bottom: 18px;
-  translate: -50% 0;
-  display: flex;
-  pointer-events: auto;
-  background: var(--paper);
-  border: 1px solid var(--hair);
-}
-
-.chrome-readout {
-  right: 18px;
-  bottom: 18px;
-  width: min(330px, calc(100vw - 36px));
-  background: var(--paper);
-  border: 1px solid var(--hair);
-  padding: 9px 12px 10px;
-}
-
-.readout-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-}
-
-.readout-next {
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-[lang="bn"] .readout-next {
-  font-family: var(--bangla);
-  font-size: 15px;
-}
-
-.readout-kicker {
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  color: rgba(35, 39, 42, 0.72);
-}
-
-[lang="bn"] .readout-kicker {
-  font-family: var(--bangla);
-  font-size: 11px;
-  letter-spacing: 0;
-}
-
-.readout-speed {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.line-strip {
-  position: relative;
-  height: 14px;
-  margin-top: 8px;
-}
-
-.line-strip::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 6px;
-  height: 2px;
-  background: var(--green);
-}
-
-.line-stop {
-  position: absolute;
-  top: 4px;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  border-radius: 50%;
-  background: var(--paper);
-  border: 1px solid var(--green);
-}
-
-.line-train {
-  position: absolute;
-  top: 2px;
-  width: 16px;
-  height: 10px;
-  margin-left: -8px;
-  border-radius: 3px;
-  background: var(--green);
-  border: 1px solid var(--paper);
-}
-
-.chrome-hint {
-  left: 18px;
-  bottom: 18px;
-  max-width: 30ch;
-  background: var(--paper);
-  border: 1px solid var(--hair);
-  padding: 8px 12px;
-  line-height: 1.4;
-}
-
-[lang="bn"] .chrome-hint {
-  font-family: var(--bangla);
-  font-size: 12px;
-}
-
-@media (max-width: 760px) {
-  .chrome-hint {
-    display: none;
-  }
-  .chrome-readout {
-    left: 10px;
-    right: 10px;
-    width: auto;
-    bottom: 62px;
-  }
-  .chrome-cars {
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    translate: 0 0;
-  }
-  .chrome-cars button {
-    flex: 1;
-    min-width: 0;
-    padding: 0;
-    min-height: 44px;
-  }
-  .chrome-brand {
-    left: 10px;
-    top: 10px;
-  }
-  .chrome-controls {
-    right: 10px;
-    top: 10px;
-  }
-  .chrome-controls button {
-    min-height: 44px;
-    min-width: 44px;
-  }
+.callout-bangla {
+  margin-top: 1px;
+  font-size: 12.5px;
+  opacity: 0.8;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tag,
-  .bubble,
-  .bubble-body {
+  .tag {
     animation: none;
+  }
+  .bubble-body {
     transition: none;
   }
+}
+
+.credits {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: rgba(35, 39, 42, 0.5);
+  text-decoration: none;
+  pointer-events: auto;
+}
+
+.credits:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
