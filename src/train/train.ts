@@ -1,12 +1,15 @@
-import { Box3, DynamicDrawUsage, Group, InstancedMesh, Matrix4, Mesh, Quaternion, Vector3, type ShaderMaterial } from "three";
-import { toBufferGeometry, type Pipeline } from "../render";
+import { Box3, DynamicDrawUsage, Group, InstancedMesh, Matrix4, Mesh, Quaternion, Vector3, type BufferGeometry, type ShaderMaterial } from "three";
+import { toBufferGeometry, toLineGeometry, type Pipeline } from "../render";
 import type { Theme } from "../thoughts";
 import { RAIL_Y, TRACK_Z } from "../world/layout";
 import { AXLE_OFFSET, BOGIE_OFFSET, WHEEL_RADIUS, WHEEL_Z, buildCar, buildWheel } from "./geometry";
 import { CAR_LENGTH, CAR_PITCH, FLOOR_Y, HALF_WIDTH, ROOF_Y } from "./layout";
 
-/** Six cars: the reference's past, present and future, plus Dhaka's own three. */
-export const CAR_THEMES: readonly Theme[] = ["memory", "present", "future", "home", "city", "women"];
+/**
+ * Six cars: the reference's past, present and future, plus Dhaka's own three. The first coach comes
+ * first because that is the one Line 6 reserves for women.
+ */
+export const CAR_THEMES: readonly Theme[] = ["women", "memory", "present", "future", "home", "city"];
 
 export interface TrainCar {
   index: number;
@@ -18,6 +21,8 @@ export interface TrainCar {
   shell: Mesh;
   /** Passengers and anything else that rides inside. */
   riders: Group;
+  /** Seats, poles, straps and screens: drawn only from close to, and built the first time they are. */
+  showDetail(on: boolean): void;
   /** 0 fully closed, 1 fully cut away. Eased by the caller. */
   openness: number;
 }
@@ -37,14 +42,15 @@ export function createTrain(pipeline: Pipeline, trackZ = TRACK_Z): Train {
   const group = new Group();
   group.position.set(0, RAIL_Y, trackZ);
   const pairs = {
-    front: buildCar({ cab: "front", pantograph: false }),
-    rear: buildCar({ cab: "rear", pantograph: false }),
-    plain: buildCar({ cab: "none", pantograph: false }),
-    pantograph: buildCar({ cab: "none", pantograph: true }),
+    front: buildCar({ cab: "front", pantograph: false, women: true }),
+    rear: buildCar({ cab: "rear", pantograph: false, women: false }),
+    plain: buildCar({ cab: "none", pantograph: false, women: false }),
+    pantograph: buildCar({ cab: "none", pantograph: true, women: false }),
   };
   const geometries = Object.fromEntries(
     Object.entries(pairs).map(([key, value]) => [key, [toBufferGeometry(value.fixed), toBufferGeometry(value.shell)]]),
   ) as Record<keyof typeof pairs, [ReturnType<typeof toBufferGeometry>, ReturnType<typeof toBufferGeometry>]>;
+  const detailGeometry = new Map<keyof typeof pairs, { solid: BufferGeometry; lines: BufferGeometry | null }>();
 
   const cars: TrainCar[] = CAR_THEMES.map((theme, index) => {
     const carGroup = new Group();
@@ -60,7 +66,39 @@ export function createTrain(pipeline: Pipeline, trackZ = TRACK_Z): Train {
     riders.position.y = FLOOR_Y;
     carGroup.add(fixedMesh, shell, riders);
     group.add(carGroup);
+    let detail: Mesh | null = null;
+    let detailLines: Mesh | null = null;
+    const showDetail = (on: boolean): void => {
+      if (on && !detail) {
+        let built = detailGeometry.get(kind);
+        if (!built) {
+          const data = pairs[kind].detail();
+          const solid = toBufferGeometry(data);
+          built = { solid, lines: toLineGeometry(solid, data) };
+          detailGeometry.set(kind, built);
+        }
+        detail = new Mesh(built.solid, pipeline.colored);
+        detail.frustumCulled = false;
+        carGroup.add(detail);
+        if (built.lines) {
+          detailLines = new Mesh(built.lines, pipeline.lineMaterial);
+          detailLines.frustumCulled = false;
+          detailLines.matrixAutoUpdate = false;
+          pipeline.lineScene.add(detailLines);
+        }
+      }
+      if (detail) detail.visible = on;
+      if (detailLines) {
+        detailLines.visible = on;
+        // The line pass has its own scene, so its meshes copy where the coach has got to.
+        if (on) {
+          carGroup.updateWorldMatrix(true, false);
+          detailLines.matrix.copy(carGroup.matrixWorld);
+        }
+      }
+    };
     return {
+      showDetail,
       index,
       theme,
       group: carGroup,

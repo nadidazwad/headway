@@ -1,6 +1,6 @@
 import { Surface, type Batch, type Vec3 } from "../geometry";
 import { concrete, city } from "../shared/palette";
-import { posterUv } from "../signs/regions";
+import { pierPlateUv, posterUv } from "../signs/regions";
 import { CHUNK_LENGTH, DECK_HALF, DECK_Y, RAIL_Y, SPAN, TRACK_Z, latticeIn, localX, type Context } from "./layout";
 
 const SEGMENT = 3;
@@ -62,9 +62,39 @@ function parapet(b: Batch, x0: number, x1: number, z: number, outward: number): 
   const y0 = DECK_Y;
   const y1 = DECK_Y + 1.05;
   const inner = z - outward * 0.22;
+  // A precast upstand, one panel to a girder segment, with a drip groove along its face.
   b.part();
   b.box(x0, y0, Math.min(z, inner), x1, y1, Math.max(z, inner), concrete.deck);
   b.box(x0, y1, Math.min(z, inner) - 0.02, x1, y1 + 0.05, Math.max(z, inner) + 0.02, 0xdcd7cb);
+  b.part();
+  b.quad([x0, y0 + 0.02, Math.max(z, inner) + 0.003], [x1, y0 + 0.02, Math.max(z, inner) + 0.003], [x1, y0 + 0.05, Math.max(z, inner) + 0.003], [x0, y0 + 0.05, Math.max(z, inner) + 0.003], 0xb4afa3, [0, 0, 1]);
+}
+
+/** Things on the deck: lidded cable troughs, trackside boxes, and the drain at each span. */
+function deckFittings(b: Batch, context: Context): void {
+  // Trough lids, one every metre and a half, along both walkways.
+  for (const z of [3.8, -3.8]) {
+    for (const distance of latticeIn(context, 1.5)) {
+      const x = localX(context, distance);
+      b.part();
+      b.box(x - 1.49, DECK_Y + 0.2, z - 0.28, x - 0.01, DECK_Y + 0.225, z + 0.28, 0xc9c5b9);
+    }
+  }
+  // A trackside equipment box and its cable, every other span.
+  for (const distance of latticeIn(context, SPAN * 2, 7)) {
+    const x = localX(context, distance);
+    b.part();
+    b.box(x - 0.4, DECK_Y + 0.225, 3.56, x + 0.4, DECK_Y + 0.95, 4.04, 0xa4a8a6);
+    b.part();
+    b.box(x - 0.36, DECK_Y + 0.28, 4.04, x + 0.36, DECK_Y + 0.9, 4.05, 0xb6bab8);
+    b.box(x + 0.25, DECK_Y + 0.55, 4.05, x + 0.3, DECK_Y + 0.65, 4.07, 0x4c4f52);
+  }
+  // Scuppers through the parapet's foot, feeding the downpipe on each pier.
+  for (const distance of latticeIn(context, SPAN)) {
+    const x = localX(context, distance);
+    b.part();
+    b.box(x - 0.1, DECK_Y - 0.02, DECK_HALF - 0.42, x + 0.1, DECK_Y + 0.008, DECK_HALF - 0.24, 0x55575a);
+  }
 }
 
 function pier(b: Batch, x: number, number: number): void {
@@ -80,9 +110,16 @@ function pier(b: Batch, x: number, number: number): void {
     [x + w - r, w], [x - w + r, w], [x - w, w - r], [x - w, -w + r],
   ];
   b.prism(outline, 0.28, PIER_TOP - 2.7, shaftColor);
-  // The recessed panel Line 6's piers carry on each face, with its single flute line.
-  b.box(x - w * 0.62, 2.4, w, x + w * 0.62, PIER_TOP - 3.1, w + 0.012, 0xcbc6b9);
-  b.box(x - w - 0.012, 2.4, -w * 0.62, x - w, PIER_TOP - 3.1, w * 0.62, 0xbdb8ab);
+  // The fluted panel on each face, as on the real piers: ribs cast into a shallow recess.
+  const panelTop = PIER_TOP - 3.1;
+  b.box(x - w * 0.62, 2.4, w, x + w * 0.62, panelTop, w + 0.012, 0xcbc6b9);
+  b.box(x - w - 0.012, 2.4, -w * 0.62, x - w, panelTop, w * 0.62, 0xbdb8ab);
+  b.part();
+  for (let i = -3; i <= 3; i++) {
+    const u = (i * w * 0.62) / 3.6;
+    b.box(x + u - 0.05, 2.5, w + 0.012, x + u + 0.05, panelTop - 0.1, w + 0.03, 0xd6d2c6);
+    b.box(x - w - 0.03, 2.5, u - 0.05, x - w - 0.012, panelTop - 0.1, u + 0.05, 0xc8c4b8);
+  }
   // Flared head under the deck: octagon widening towards the bearing shelf.
   b.part();
   const levels: Array<[number, number, number]> = [
@@ -109,10 +146,8 @@ function pier(b: Batch, x: number, number: number): void {
   b.box(x - 1.3, PIER_TOP + 0.42, -2.1, x + 1.3, GIRDER_BOTTOM, 2.1, concrete.web);
   // Pier number plate, as stencilled on every real pier.
   b.part();
-  b.at(x - 0.32, 3.2, w + 0.05, () => {
-    b.box(0, 0, 0, 0.64, 0.26, 0.02, 0xf1efe6);
-    b.box(0.08, 0.07, 0.02, 0.56, 0.11, 0.024, 0x34383a);
-    b.box(0.08, 0.15, 0.02, 0.42, 0.19, 0.024, 0x34383a);
+  b.at(x - 0.34, panelTop + 0.12, w + 0.002, () => {
+    b.panel(0, 0, 0.68, 0.25, 0.02, 0xffffff, pierPlateUv(number));
   });
   // Every pier in Dhaka wears posters.
   for (let i = 0; i < posterCount(number); i++) {
@@ -168,20 +203,40 @@ function overhead(b: Batch, context: Context): void {
     for (const side of [1, -1]) {
       const z = side * (DECK_HALF - 0.32);
       const track = side * TRACK_Z;
+      // The base plate, bolted through the parapet.
       b.part();
-      b.block(x, DECK_Y + 1.05, z, 0.42, 0.14, 0.42, 0x7c8285);
+      b.block(x, DECK_Y + 1.05, z, 0.46, 0.05, 0.46, 0x7c8285);
       b.part();
-      b.bar([x, DECK_Y + 1.15, z], [x, RAIL_Y + 6.9, z], 0.095, 0.08, steel, 8);
+      for (const [dx, dz] of [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]] as const) b.block(x + dx, DECK_Y + 1.1, z + dz, 0.05, 0.03, 0.05, 0x4c4f52);
+      // A steel tube mast whose head curves over towards the track, as along the real line.
+      const shoulder = wireTop - 0.5;
+      const reach = (track - z) * 0.5;
+      const swan: Vec3[] = [[x, DECK_Y + 1.1, z], [x, shoulder, z]];
+      for (let i = 1; i <= 5; i++) {
+        const a = (i / 5) * (Math.PI / 2);
+        swan.push([x, shoulder + Math.sin(a) * 0.72, z + (1 - Math.cos(a)) * reach]);
+      }
       b.part();
-      // Curved-top cantilever and the stay that holds its tip.
-      b.bar([x, wireTop + 0.28, z], [x, wireTop + 0.28, track], 0.04, 0.04, steel, 5);
-      b.bar([x, contact + 0.26, z], [x, wireTop + 0.22, track], 0.035, 0.035, steel, 5);
+      b.cable(swan, 0.085, steel, 8);
+      const head = swan[swan.length - 1]!;
+      // The stay tube out from the swan-neck to the wire, with its string of insulators.
+      const hanger: Vec3 = [x, wireTop + 0.18, track];
       b.part();
-      b.bar([x, contact + 0.05, track - side * 0.3], [x, wireTop + 0.24, track], 0.022, 0.022, dark, 4);
-      b.block(x, contact + 0.03, track, 0.09, 0.09, 0.3, dark);
-      // Insulators.
+      b.bar(head, hanger, 0.035, 0.03, steel, 5);
+      b.bar([x, shoulder - 0.7, z], [x, contact + 0.18, track - side * 0.34], 0.03, 0.028, steel, 5);
       b.part();
-      b.bar([x, wireTop + 0.28, z - side * 0.18], [x, wireTop + 0.28, z - side * 0.55], 0.07, 0.07, 0x5f7c66, 6);
+      for (let i = 0; i < 4; i++) {
+        const t = 0.32 + i * 0.09;
+        const px = head[0];
+        const py = head[1] + (hanger[1] - head[1]) * t;
+        const pz = head[2] + (hanger[2] - head[2]) * t;
+        b.ellipsoid(px, py, pz, 0.075, 0.075, 0.03, 0x5f6f66, 3, 7);
+      }
+      // The steady arm that holds the contact wire, and its clamp.
+      b.part();
+      b.bar([x, contact + 0.18, track - side * 0.34], [x, contact + 0.02, track], 0.016, 0.014, dark, 4);
+      b.bar(hanger, [x, contact + 0.18, track - side * 0.34], 0.012, 0.012, dark, 3);
+      b.block(x, contact - 0.02, track, 0.1, 0.06, 0.16, dark);
     }
   }
   for (const side of [1, -1]) {
@@ -242,4 +297,5 @@ export function buildViaduct(b: Batch, context: Context): void {
   overhead(b, context);
   handrail(b, context);
   girderFittings(b, context);
+  deckFittings(b, context);
 }

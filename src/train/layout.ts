@@ -28,8 +28,19 @@ export const BENCHES: ReadonlyArray<readonly [number, number]> = [
   [-7.7, -6.2],
   [6.2, 7.7],
 ];
+/** The far side's last bench gives way to the space every coach keeps for a wheelchair. */
+export const WHEELCHAIR_BAY: readonly [number, number] = [6.2, 7.7];
 export const INSIDE_HALF = HALF_WIDTH - 0.08;
+export const SEAT_PITCH = 0.457;
+export const SEAT_HEIGHT = 0.44;
 export const STRAP_RAIL_Z = 0.78;
-export const STRAP_STEP = 0.72;
-/** Height of the ceiling rail that carries the ring straps, above the floor. */
-export const STRAP_RAIL_HEIGHT = ROOF_Y - 0.6 - FLOOR_Y;
+export const STRAP_STEP = 0.48;
+/** Rail above the floor: the rings hang at a reach a short passenger can still make. */
+export const STRAP_RAIL_HEIGHT = 2.12;
+export const RING_DROP = 0.27;
+
+/** The middle of each moulded seat along a bench, in the coach's own x. */
+export function seatCentres(from: number, to: number): number[] {
+  const count = Math.max(1, Math.round((to - from) / SEAT_PITCH));
+  return Array.from({ length: count }, (_, i) => from + ((i + 0.5) * (to - from)) / count);
+}

@@ -127,7 +127,7 @@ void createAtlas(pipeline.renderer.capabilities.getMaxAnisotropy()).then((atlas)
 // Passengers ------------------------------------------------------------------------------------
 
 const crews: Passenger[][] = train.cars.map((car) => {
-  const roster = rosterFor(assets, seed, car.index, car.theme, car.index === 0 ? -7.9 + CAB_DEPTH + 0.2 : -7.9);
+  const roster = rosterFor(assets, seed, car.index, car.theme, car.index === 0 ? -7.9 + CAB_DEPTH + 0.2 : -7.9, car.index === 5 ? 7.9 - CAB_DEPTH - 0.2 : 7.9);
   return car.index === 0 ? [...roster, operatorFor(assets, seed)] : roster;
 });
 
@@ -426,6 +426,7 @@ function updateHover(dt: number): void {
     car.openness += (goal - car.openness) * (1 - Math.exp(-rate * dt));
     if (Math.abs(goal - car.openness) < 0.002) car.openness = goal;
     riders[car.index]!.show(car.openness > 0.01);
+    car.showDetail(car.openness > 0.01 || aim.width < 32);
   }
 
   // Thoughts belong to the coach that is open.

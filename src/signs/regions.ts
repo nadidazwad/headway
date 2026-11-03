@@ -146,3 +146,33 @@ export function posterCell(index: number): [number, number] {
 export const shopUv = (index: number): Uv => rect(...shopCell(index), SHOP_CELL.w, SHOP_CELL.h);
 export const billboardUv = (index: number): Uv => rect(...billboardCell(index), BILLBOARD_CELL.w, BILLBOARD_CELL.h);
 export const posterUv = (index: number): Uv => rect(...posterCell(index), POSTER_CELL.w, POSTER_CELL.h);
+
+/** Print on the train itself, from the photographs of Line 6 sets and their stations. */
+export const TRAIN_PRINT = {
+  women: { x: 4, y: 1830, w: 256, h: 64 },
+  destination: { x: 264, y: 1830, w: 256, h: 64 },
+  number: { x: 524, y: 1830, w: 96, h: 64 },
+  route: { x: 624, y: 1830, w: 512, h: 64 },
+  advert0: { x: 4, y: 1898, w: 512, h: 56 },
+  advert1: { x: 520, y: 1898, w: 512, h: 56 },
+  advert2: { x: 1036, y: 1898, w: 512, h: 56 },
+  advert3: { x: 1552, y: 1898, w: 490, h: 56 },
+  noSmoking: { x: 4, y: 1958, w: 64, h: 64 },
+  exit: { x: 72, y: 1958, w: 128, h: 64 },
+  priority: { x: 204, y: 1958, w: 128, h: 64 },
+  wheelchair: { x: 336, y: 1958, w: 64, h: 64 },
+  doorPlate: { x: 404, y: 1958, w: 64, h: 32 },
+  fire: { x: 472, y: 1958, w: 64, h: 64 },
+} as const;
+export type TrainPrint = keyof typeof TRAIN_PRINT;
+export const trainUv = (name: TrainPrint): Uv => {
+  const { x, y, w, h } = TRAIN_PRINT[name];
+  return rect(x, y, w, h);
+};
+
+/** Stencilled pier numbers, in the style of the P529 on the real line. */
+export const PIER_PLATE = { x: 1140, y: 1830, w: 88, h: 32, count: 10 } as const;
+export const pierPlateUv = (number: number): Uv => {
+  const i = ((number % PIER_PLATE.count) + PIER_PLATE.count) % PIER_PLATE.count;
+  return rect(PIER_PLATE.x + i * PIER_PLATE.w, PIER_PLATE.y, PIER_PLATE.w, PIER_PLATE.h);
+};

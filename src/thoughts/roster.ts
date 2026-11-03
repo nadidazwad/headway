@@ -1,6 +1,6 @@
 import type { Assets, PersonPose } from "../assets";
 import { Rng, hashSeed } from "../shared/rng";
-import { BENCHES, DOOR_CENTERS, INSIDE_HALF, STRAP_RAIL_Z, STRAP_STEP } from "../train/layout";
+import { BENCHES, DOOR_CENTERS, INSIDE_HALF, STRAP_RAIL_Z, STRAP_STEP, WHEELCHAIR_BAY, seatCentres } from "../train/layout";
 import { NAMES_F, NAMES_M, OPERATOR_THOUGHTS, THOUGHTS, type Thought, type Theme } from "./corpus";
 
 export interface Passenger {
@@ -32,8 +32,8 @@ interface Place {
 function placesInCar(rng: Rng, count: number): Place[] {
   const places: Place[] = [];
   for (const [a, d] of BENCHES) {
-    for (let u = a + 0.34; u < d - 0.22; u += 0.58) {
-      places.push({ x: u, z: -(INSIDE_HALF - 0.34), facing: 0, seated: true, strap: false });
+    for (const u of seatCentres(a, d)) {
+      if (a !== WHEELCHAIR_BAY[0]) places.push({ x: u, z: -(INSIDE_HALF - 0.34), facing: 0, seated: true, strap: false });
       places.push({ x: u, z: INSIDE_HALF - 0.34, facing: Math.PI, seated: true, strap: false });
     }
   }
@@ -51,11 +51,11 @@ function placesInCar(rng: Rng, count: number): Place[] {
   return out;
 }
 
-export function rosterFor(assets: Assets, seed: number, carIndex: number, theme: Theme, xMin: number): Passenger[] {
+export function rosterFor(assets: Assets, seed: number, carIndex: number, theme: Theme, xMin: number, xMax: number): Passenger[] {
   const rng = new Rng(hashSeed(seed, carIndex, 91));
   const womenOnly = theme === "women";
   const count = rng.int(9, 13);
-  const places = placesInCar(rng, count).filter((place) => place.x > xMin);
+  const places = placesInCar(rng, count).filter((place) => place.x > xMin && place.x < xMax);
   const thoughts = rng.shuffled(THOUGHTS[theme]);
   const speakers = Math.min(places.length, rng.int(3, 5));
   const order = rng.shuffled(places.map((_, i) => i));

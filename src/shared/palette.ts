@@ -7,7 +7,7 @@ export const train = {
   silver: 0xcfd3d4,
   silverDark: 0x9ea4a6,
   roof: 0xa9aeb0,
-  equipment: 0x6d7375,
+  equipment: 0x8f9597,
   cab: 0x07694b,
   band: 0x1e8a62,
   door: 0xd2d6d7,
