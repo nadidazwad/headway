@@ -1,1 +1,1 @@
-export { loadAssets, type Assets, type PersonPose } from "./library";
+export { loadAssets, type Assets, type Outfit, type PersonPose } from "./library";

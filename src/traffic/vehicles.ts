@@ -32,7 +32,7 @@ function rider(b: Batch, assets: Assets, x: number, seatY: number, z: number, to
 
 const wholeCast = (assets: Assets, rng: Rng): number => rng.int(0, assets.avatars.length - 1);
 const man = (assets: Assets, rng: Rng): number => {
-  const men = assets.avatars.flatMap((a, i) => (a.female ? [] : [i]));
+  const men = assets.avatars.flatMap((a, i) => (a.female || a.outfit === "suit" ? [] : [i]));
   return rng.pick(men);
 };
 

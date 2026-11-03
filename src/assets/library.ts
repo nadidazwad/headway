@@ -1,4 +1,6 @@
-import type { Stampable } from "../geometry";
+import { Surface, type Stampable } from "../geometry";
+
+export type Outfit = "burka" | "shalwar" | "shari" | "kurta" | "top" | "shirt" | "tshirt" | "suit" | "panjabi" | "lungi";
 
 export type PersonPose = "stand" | "look" | "phone" | "music" | "bag" | "sit" | "sitrest" | "strap" | "sitphone";
 
@@ -15,6 +17,7 @@ interface PeopleIndex {
   stride: number;
   avatars: Array<{
     name: string;
+    outfit: Outfit;
     female: boolean;
     lods: { hi: LodEntry; lo: LodEntry; far: LodEntry };
     poses: Record<PersonPose, { hi: number; lo: number; far: number; top: number }>;
@@ -39,7 +42,7 @@ interface PropIndex {
 }
 
 export interface Assets {
-  avatars: ReadonlyArray<{ name: string; female: boolean; walkStride: number }>;
+  avatars: ReadonlyArray<{ name: string; outfit: Outfit; female: boolean; walkStride: number }>;
   person(avatar: number, pose: PersonPose, lod: "hi" | "lo" | "far"): Stampable;
   walkFrame(avatar: number, frame: number): Stampable;
   readonly walkFrames: number;
@@ -92,6 +95,7 @@ async function load(base: string): Promise<Assets> {
       count,
       pos,
       nor,
+      surface: Surface.figure,
       grey: new Uint8Array(peopleBytes, lod.grey, count),
       part: new Uint8Array(peopleBytes, lod.part, count),
       index: new Uint16Array(peopleBytes.slice(lod.indices, lod.indices + lod.triangles * 6)),

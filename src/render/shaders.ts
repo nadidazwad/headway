@@ -309,7 +309,8 @@ void main() {
     float value = dot(base, vec3(0.3, 0.59, 0.11));
     // Print keeps its blacks, so a sign still reads; everything else is lifted towards the paper.
     bool printed = vUv.x > 0.0 || vUv.y > 0.0;
-    value = printed ? 0.2 + 0.8 * value : 0.42 + 0.58 * pow(value, 0.7);
+    bool figure = vSurface > 10.5 && vSurface < 11.5;
+    value = printed ? 0.2 + 0.8 * value : figure ? 0.14 + 0.86 * pow(value, 0.85) : 0.42 + 0.58 * pow(value, 0.7);
     #ifndef NO_WEATHER
     value *= weathering(vSurface, vLine, n);
     #endif

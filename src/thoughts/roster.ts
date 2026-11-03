@@ -1,4 +1,4 @@
-import type { Assets, PersonPose } from "../assets";
+import type { Assets, Outfit, PersonPose } from "../assets";
 import { Rng, hashSeed } from "../shared/rng";
 import { BENCHES, DOOR_CENTERS, INSIDE_HALF, STRAP_RAIL_Z, STRAP_STEP, WHEELCHAIR_BAY, seatCentres } from "../train/layout";
 import { NAMES_F, NAMES_M, OPERATOR_THOUGHTS, THOUGHTS, type Thought, type Theme } from "./corpus";
@@ -41,7 +41,8 @@ function placesInCar(rng: Rng, count: number): Place[] {
   const standing: Place[] = rng.shuffled(DOOR_CENTERS).flatMap((center) => {
     const ring = Math.round((center + 1.1) / STRAP_STEP) * STRAP_STEP;
     return [
-      { x: ring + 0.2, z: -STRAP_RAIL_Z + 0.1, facing: rng.range(-0.25, 0.25), seated: false, strap: true },
+      // The right hand is up in the ring, so the body stands a shoulder's width along from it.
+      { x: ring + 0.17, z: -STRAP_RAIL_Z - 0.08, facing: 0, seated: false, strap: true },
       { x: center + rng.range(0.5, 0.9), z: rng.range(0.05, 0.5), facing: rng.range(-1.2, 1.2), seated: false, strap: false },
       { x: center - rng.range(0.5, 0.9), z: rng.range(-0.3, 0.3), facing: rng.range(-1.2, 1.2), seated: false, strap: false },
     ];
@@ -50,6 +51,11 @@ function placesInCar(rng: Rng, count: number): Place[] {
   out.push(...rng.shuffled(standing).slice(0, count - out.length));
   return out;
 }
+
+/** What people wear on the train: more burkas and shalwar kameez in the women's coach than anywhere. */
+const WOMEN: Readonly<Partial<Record<Outfit, number>>> = { burka: 2, shalwar: 4, shari: 1.2, kurta: 1.6, top: 1.2 };
+const WOMENS_COACH: Readonly<Partial<Record<Outfit, number>>> = { burka: 4, shalwar: 4.6, shari: 1, kurta: 0.8, top: 0.6 };
+const MEN: Readonly<Partial<Record<Outfit, number>>> = { shirt: 4.5, tshirt: 2.5, panjabi: 2, suit: 1 };
 
 export function rosterFor(assets: Assets, seed: number, carIndex: number, theme: Theme, xMin: number, xMax: number): Passenger[] {
   const rng = new Rng(hashSeed(seed, carIndex, 91));
@@ -62,19 +68,37 @@ export function rosterFor(assets: Assets, seed: number, carIndex: number, theme:
   // Prefer people whose faces the camera can see: the far bench and those standing.
   const speaking = new Set(order.filter((i) => places[i]!.z < 0.6).slice(0, speakers));
   const usedNames = new Set<string>();
-  const females = assets.avatars.flatMap((avatar, i) => (avatar.female ? [i] : []));
-  const males = assets.avatars.flatMap((avatar, i) => (avatar.female ? [] : [i]));
-  const castFemale = rng.shuffled(females);
-  const castMale = rng.shuffled(males);
-  let nextFemale = 0;
-  let nextMale = 0;
+  const castOf = new Map<Outfit, number[]>();
+  assets.avatars.forEach((avatar, i) => {
+    const list = castOf.get(avatar.outfit);
+    if (list) list.push(i);
+    else castOf.set(avatar.outfit, [i]);
+  });
+  for (const [outfit, list] of castOf) castOf.set(outfit, rng.shuffled(list));
+  const worn = new Map<Outfit, number>();
+  const dress = (mix: Readonly<Partial<Record<Outfit, number>>>): number => {
+    const options = Object.entries(mix) as Array<[Outfit, number]>;
+    let roll = rng.next() * options.reduce((sum, [, weight]) => sum + weight, 0);
+    let outfit = options[0]![0];
+    for (const [name, weight] of options) {
+      roll -= weight;
+      if (roll <= 0) {
+        outfit = name;
+        break;
+      }
+    }
+    const list = castOf.get(outfit)!;
+    const turn = worn.get(outfit) ?? 0;
+    worn.set(outfit, turn + 1);
+    return list[turn % list.length]!;
+  };
   return places.map((place, index) => {
     const female = womenOnly || rng.chance(0.48);
     const pool: ReadonlyArray<readonly [string, string]> = female ? NAMES_F : NAMES_M;
     let pair = rng.pick(pool);
     for (let tries = 0; tries < 6 && usedNames.has(pair[1]); tries++) pair = rng.pick(pool);
     usedNames.add(pair[1]);
-    const avatar = female ? castFemale[nextFemale++ % castFemale.length]! : castMale[nextMale++ % castMale.length]!;
+    const avatar = dress(womenOnly ? WOMENS_COACH : female ? WOMEN : MEN);
     const pose: PersonPose = place.seated
       ? rng.pick(["sit", "sit", "sitrest", "sitphone"] as const)
       : place.strap

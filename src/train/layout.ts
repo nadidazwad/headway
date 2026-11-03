@@ -36,7 +36,7 @@ export const SEAT_HEIGHT = 0.44;
 export const STRAP_RAIL_Z = 0.78;
 export const STRAP_STEP = 0.48;
 /** Rail above the floor: the rings hang at a reach a short passenger can still make. */
-export const STRAP_RAIL_HEIGHT = 2.12;
+export const STRAP_RAIL_HEIGHT = 2.0;
 export const RING_DROP = 0.27;
 
 /** The middle of each moulded seat along a bench, in the coach's own x. */

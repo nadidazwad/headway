@@ -36,6 +36,8 @@ export const Surface = {
   brick: 8,
   tin: 9,
   bark: 10,
+  /** People: their dark clothes and hair stay dark, where the city is lifted towards the paper. */
+  figure: 11,
 } as const;
 export type SurfaceKind = (typeof Surface)[keyof typeof Surface];
 
@@ -47,6 +49,7 @@ export interface Stampable {
   grey: Uint8Array;
   part: Uint8Array;
   index: Uint16Array | Uint32Array;
+  surface?: SurfaceKind;
 }
 
 /** The camera's whole allowed range, the drag limits included. See camera/limits. */
@@ -584,12 +587,15 @@ export class Batch {
     this.growIndices(mesh.index.length);
     const first = this.vertexCount;
     const base = this.partId;
+    const surfaceBefore = this.surfaceId;
+    if (mesh.surface !== undefined) this.surfaceId = mesh.surface;
     for (let i = 0; i < mesh.count; i++) {
       const g = Math.min(255, Math.round(mesh.grey[i]! * tone));
       this.partId = ((base + mesh.part[i]! * 37) % 250) || 1;
       this.vertex(mesh.pos[i * 3]!, mesh.pos[i * 3 + 1]!, mesh.pos[i * 3 + 2]!, mesh.nor[i * 3]! / 127, mesh.nor[i * 3 + 1]! / 127, mesh.nor[i * 3 + 2]! / 127, (g << 16) | (g << 8) | g);
     }
     this.partId = base;
+    this.surfaceId = surfaceBefore;
     this.part();
     for (let i = 0; i < mesh.index.length; i += 3) {
       const a = mesh.index[i]!;

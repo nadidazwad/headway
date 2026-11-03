@@ -6,6 +6,7 @@ import { AnimationMixer, Quaternion, Vector3 } from "three";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { TGALoader } from "three/examples/jsm/loaders/TGALoader.js";
 import { MeshoptSimplifier } from "meshoptimizer";
+import { readSkeleton, tailor } from "./garments.mjs";
 
 const noop = () => {};
 globalThis.document ??= { createElementNS: () => ({ style: {}, addEventListener: noop, removeEventListener: noop }) };
@@ -25,6 +26,46 @@ const FAR_TRIANGLES = 260;
 const WALK_FRAMES = 8;
 /** Quantisation of positions: 1 unit is 1/4096 of a metre. */
 const QUANT = 4096;
+
+/**
+ * Who is in the city, and in what. No `piece` means the avatar's own clothes are right as they
+ * stand: Rocketbox has a true burka, a hijab with a long robe, a white panjabi with a cap, and plenty
+ * of men in shirts. Everyone else is re-dressed by garments.mjs. Greys are 0 to 255; everything but
+ * the train is grey, so one outfit reads from the next by tone and by shape.
+ */
+const CAST = [
+  { avatar: "Female_Adult_10", label: "burka" },
+  { avatar: "Female_Adult_06", label: "burka" },
+  { avatar: "Female_Adult_05", label: "burka", piece: "burka", upper: 40, hijab: true, scarf: 48, drape: 0.2 },
+  { avatar: "Female_Adult_14", label: "burka", piece: "burka", upper: 96, hijab: true, scarf: 112, drape: 0.2 },
+  { avatar: "Female_Adult_02", label: "shalwar", piece: "shalwar", upper: 170, lower: 104, orna: 214 },
+  { avatar: "Female_Adult_11", label: "shalwar", piece: "shalwar", upper: 108, lower: 192, orna: 150 },
+  { avatar: "Female_Adult_15", label: "shalwar", piece: "shalwar", upper: 208, lower: 92, hijab: true, scarf: 150 },
+  { avatar: "Female_Adult_14", label: "shalwar", piece: "shalwar", upper: 78, lower: 164, hijab: true, scarf: 196 },
+  { avatar: "Female_Adult_07", label: "shari", piece: "shari", upper: 196, lower: 120, border: 66 },
+  { avatar: "Female_Adult_11", label: "shari", piece: "shari", upper: 118, lower: 66, border: 214 },
+  { avatar: "Female_Adult_02", label: "shari", piece: "shari", upper: 232, lower: 190, border: 92 },
+  { avatar: "Female_Adult_08", label: "kurta", piece: "kurta", upper: 156, lower: 58 },
+  { avatar: "Female_Adult_15", label: "kurta", piece: "kurta", upper: 214, lower: 66, hijab: true, scarf: 124 },
+  { avatar: "Female_Adult_05", label: "top" },
+  { avatar: "Female_Adult_07", label: "top" },
+  { avatar: "Female_Adult_08", label: "top" },
+  { avatar: "Male_Adult_08", label: "shirt" },
+  { avatar: "Male_Adult_14", label: "shirt" },
+  { avatar: "Male_Adult_09", label: "tshirt" },
+  { avatar: "Male_Adult_11", label: "tshirt" },
+  { avatar: "Male_Adult_20", label: "tshirt" },
+  { avatar: "Male_Adult_03", label: "suit" },
+  { avatar: "Male_Adult_06", label: "suit", piece: "suit", upper: 54, lower: 48 },
+  { avatar: "Male_Adult_15", label: "panjabi" },
+  { avatar: "Male_Adult_02", label: "panjabi", piece: "panjabi", upper: 232, lower: 238, cap: 244 },
+  { avatar: "Male_Adult_17", label: "panjabi", piece: "panjabi", upper: 126, lower: 226 },
+  { avatar: "Male_Adult_06", label: "panjabi", piece: "panjabi", upper: 186, lower: 60 },
+  { avatar: "Male_Adult_02", label: "lungi", piece: "lungi", upper: 206, lower: 104 },
+];
+const castId = (member) => member.avatar + (member.piece ? `-${member.label}` : "");
+/** The rail is 2 m up and the ring hangs below it: a real reach for a short passenger. */
+const RING_HEIGHT = 1.73;
 
 const toBuffer = (path) => {
   const file = readFileSync(path);
@@ -64,6 +105,21 @@ function weld(root, textures) {
     const groups = geometry.groups.length ? geometry.groups : [{ start: 0, count: geometry.attributes.position.count, materialIndex: 0 }];
     const position = geometry.attributes.position;
     const uv = geometry.attributes.uv;
+    const skinIndex = geometry.attributes.skinIndex;
+    const skinWeight = geometry.attributes.skinWeight;
+    const boneNames = mesh.skeleton.bones.map((bone) => bone.name.replace(/^bip0?1_?/i, "").toLowerCase());
+    const dominantBone = (index) => {
+      let best = 0;
+      let bestWeight = -1;
+      for (let k = 0; k < 4; k++) {
+        const w = skinWeight.getComponent(index, k);
+        if (w > bestWeight) {
+          bestWeight = w;
+          best = skinIndex.getComponent(index, k);
+        }
+      }
+      return boneNames[best] ?? "";
+    };
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0];
       const name = (material?.name ?? "").toLowerCase();
@@ -83,7 +139,7 @@ function weld(root, textures) {
           if (id === undefined) {
             id = vertices.length;
             lookup.set(key, id);
-            vertices.push({ mesh, index, grey: luma(sample), part });
+            vertices.push({ mesh, index, grey: luma(sample), part, bone: dominantBone(index) });
           }
           corners.push(id);
         }
@@ -186,7 +242,10 @@ function reach(root, side, target, pole) {
 
 const ANIM = (gender, name) => join(source, "anim", `${gender}_${name}.max.fbx`);
 
-async function bakeAvatar(name) {
+const SKIN_BONES = /head|hand|finger|thumb|masseter|cheek|lip|eye|brow|jaw|nose|tongue|caninus|mouth/;
+
+async function bakeAvatar(member) {
+  const name = member.avatar;
   const gender = name.startsWith("Female") ? "f" : "m";
   const folder = join(source, "avatars", name);
   const textures = {};
@@ -216,37 +275,137 @@ async function bakeAvatar(name) {
   await MeshoptSimplifier.ready;
   const simplifyPositions = new Float32Array(restPositions.length);
   for (let i = 0; i < restPositions.length; i++) simplifyPositions[i] = restPositions[i] * metres;
+
+  const bone = (...names) => findBone(root, ...names);
+  const skeletonBones = {
+    pelvis: bone("pelvis"),
+    spine: bone("_spine"),
+    spine1: bone("spine1"),
+    spine2: bone("spine2"),
+    neck: bone("_neck"),
+    head: bone("_head", " head"),
+    leye: bone("leye"),
+    reye: bone("reye"),
+    claL: bone("l_clavicle"),
+    claR: bone("r_clavicle"),
+    upL: bone("l_upperarm"),
+    upR: bone("r_upperarm"),
+    foreL: bone("l_forearm"),
+    foreR: bone("r_forearm"),
+    handL: bone("l_hand"),
+    handR: bone("r_hand"),
+    thighL: bone("l_thigh"),
+    thighR: bone("r_thigh"),
+    calfL: bone("l_calf"),
+    calfR: bone("r_calf"),
+    footL: bone("l_foot"),
+    footR: bone("r_foot"),
+  };
+  const headRest = skeletonBones.head.getWorldQuaternion(new Quaternion());
+  const rawPerMetre = 1 / metres;
+  const skeleton = () => {
+    root.updateMatrixWorld(true);
+    return readSkeleton(skeletonBones, rawPerMetre, headRest);
+  };
+
+  // South Asian skin and black hair, whatever the avatar was made with.
+  vertices.forEach((vertex) => {
+    if (vertex.part === 2) vertex.grey = Math.min(vertex.grey, 58);
+    else if (SKIN_BONES.test(vertex.bone) || (vertex.bone === "neck" && !member.hijab)) vertex.grey *= 0.8;
+  });
+  const faceGreys = vertices.filter((vertex) => vertex.part === 1).map((vertex) => vertex.grey).sort((a, b) => a - b);
+  const skinGrey = Math.round(faceGreys[faceGreys.length >> 1] ?? 120);
+  // Under new clothes, a wrist must be a wrist, not the cuff of whatever the avatar came in.
+  if (member.piece) {
+    vertices.forEach((vertex) => {
+      if (/hand|finger|thumb/.test(vertex.bone)) vertex.grey = skinGrey;
+    });
+  }
+
+  const restSkeleton = skeleton();
+  const brow = restSkeleton.eyes.y + 0.035 * rawPerMetre;
+  const chin = restSkeleton.eyes.y - 0.145 * rawPerMetre;
+  const faceFront = restSkeleton.eyes.z - 0.05 * rawPerMetre;
+  const faceSide = 0.08 * rawPerMetre;
+  // The avatar's own trouser hems ride on the foot bone: above the ankle they go with the trousers.
+  const ankle = restSkeleton.footL.y + 0.02 * rawPerMetre;
+  // Re-dressed, only what shows through the clothes is kept. A triangle must mostly belong to it.
+  const SHOWS = /head|neck|hand|finger|thumb|foot|toe|masseter|cheek|lip|eye|brow|jaw|nose|tongue|caninus|mouth/;
+  const showsThrough = (id) => SHOWS.test(vertices[id].bone);
+  if (member.piece) {
+    vertices.forEach((vertex, id) => {
+      if (/_foot/.test(vertex.bone) && restPositions[id * 3 + 1] > ankle - 0.02 * rawPerMetre) vertex.grey = member.lower ?? member.upper ?? skinGrey;
+    });
+  }
+  const isFace = (id) => {
+    const x = restPositions[id * 3];
+    const y = restPositions[id * 3 + 1];
+    const z = restPositions[id * 3 + 2];
+    return y < brow && y > chin && z > faceFront && Math.abs(x) < faceSide;
+  };
+  const keptBy = (keepsFace) => {
+    const kept = [];
+    for (let i = 0; i < indices.length; i += 3) {
+      const corners = [indices[i], indices[i + 1], indices[i + 2]];
+      const vs = corners.map((id) => vertices[id]);
+      if (member.piece && !corners.every(showsThrough)) continue;
+      if (member.hijab) {
+        if (vs.some((v) => v.part === 2)) continue;
+        if (vs.some((v) => SKIN_BONES.test(v.bone) && !/hand|finger|thumb/.test(v.bone))) {
+          if (!keepsFace || !corners.every(isFace)) continue;
+        }
+      }
+      kept.push(...corners);
+    }
+    return Uint32Array.from(kept);
+  };
+
   const greys = new Float32Array(vertices.length);
   vertices.forEach((vertex, i) => (greys[i] = vertex.grey / 255));
-  const simplified = (target) => {
-    const [result] = MeshoptSimplifier.simplifyWithAttributes(indices, simplifyPositions, 3, greys, 1, [0.6], null, target * 3, 0.03, []);
+  const simplified = (list, target, flags) => {
+    if (list.length / 3 <= target) return list;
+    const [result] = MeshoptSimplifier.simplifyWithAttributes(list, simplifyPositions, 3, greys, 1, [0.6], null, target * 3, 0.03, flags);
     return result;
   };
-  const lodIndices = { hi: simplified(HI_TRIANGLES), lo: simplified(LO_TRIANGLES), far: simplified(FAR_TRIANGLES) };
   const compact = (list) => {
     const remap = new Map();
     const used = [];
-    const out = new Uint16Array(list.length);
-    list.forEach((v, i) => {
+    const out = [];
+    list.forEach((v) => {
       if (!remap.has(v)) {
         remap.set(v, used.length);
         used.push(v);
       }
-      out[i] = remap.get(v);
+      out.push(remap.get(v));
     });
     return { used, indices: out };
   };
-  const lods = { hi: compact(lodIndices.hi), lo: compact(lodIndices.lo), far: compact(lodIndices.far) };
+  const BUDGET = { hi: HI_TRIANGLES, lo: LO_TRIANGLES, far: FAR_TRIANGLES };
+  const lods = {};
+  for (const lod of ["hi", "lo", "far"]) {
+    const outfit = tailor(member, lod, skinGrey, gender === "f");
+    outfit.build(restSkeleton, "stand");
+    const clothTriangles = outfit.cloth.indices.length / 3;
+    // A re-dressed body is islands (head, hands, feet) whose open edges must stay where the clothes meet them.
+    const flags = member.piece && lod !== "far" ? ["LockBorder"] : [];
+    const body = compact(simplified(keptBy(outfit.keepsFace), Math.max(50, BUDGET[lod] - clothTriangles), flags));
+    const offset = body.used.length;
+    lods[lod] = {
+      outfit,
+      used: body.used,
+      indices: Uint16Array.from([...body.indices, ...outfit.cloth.indices.map((v) => v + offset)]),
+      grey: [...body.used.map((v) => Math.round(vertices[v].grey)), ...outfit.cloth.greys],
+      part: [...body.used.map((v) => vertices[v].part), ...outfit.cloth.parts],
+    };
+  }
 
-  const pelvis = findBone(root, "pelvis");
-  const headBone = findBone(root, "_head", " head");
+  const pelvis = skeletonBones.pelvis;
+  const headBone = skeletonBones.head;
   const footL = findBone(root, "l_foot", "l foot");
   const toeL = findBone(root, "l_toe0", "l toe0");
-  const handR = findBone(root, "r_hand", "r hand");
-  const neck = findBone(root, "neck");
-  const clavicleR = findBone(root, "r_clavicle", "r clavicle");
-  const thighL = findBone(root, "l_thigh", "l thigh");
-  const thighR = findBone(root, "r_thigh", "r thigh");
+  const clavicleR = skeletonBones.claR;
+  const thighL = skeletonBones.thighL;
+  const thighR = skeletonBones.thighR;
 
   const scale = metres;
   /** Which way the body faces, from across the hips. A foot will not do: lifted, its toe points down and its heading is noise. */
@@ -257,7 +416,7 @@ async function bakeAvatar(name) {
     return Math.atan2(right.z - left.z, left.x - right.x);
   };
   /** One still of the current skeleton, normalised: feet on y = 0, pelvis over the origin, facing +Z. */
-  const capture = (lod, heading = bodyHeading()) => {
+  const capture = (lod, heading = bodyHeading(), pose = "stand") => {
     root.updateMatrixWorld(true);
     const positions = skinnedPositions(vertices);
     let lowest = Infinity;
@@ -265,14 +424,18 @@ async function bakeAvatar(name) {
     const anchor = new Vector3();
     pelvis.getWorldPosition(anchor);
     const c = Math.cos(heading), s = Math.sin(heading);
-    const out = new Float32Array(lods[lod].used.length * 3);
-    lods[lod].used.forEach((source, i) => {
-      const x = positions[source * 3] - anchor.x;
-      const z = positions[source * 3 + 2] - anchor.z;
+    const { used, outfit } = lods[lod];
+    const cloth = outfit.build(skeleton(), pose).positions;
+    const out = new Float32Array(used.length * 3 + cloth.length);
+    const put = (i, px, py, pz) => {
+      const x = px - anchor.x;
+      const z = pz - anchor.z;
       out[i * 3] = (x * c - z * s) * scale;
-      out[i * 3 + 1] = (positions[source * 3 + 1] - lowest) * scale;
+      out[i * 3 + 1] = (py - lowest) * scale;
       out[i * 3 + 2] = (x * s + z * c) * scale;
-    });
+    };
+    used.forEach((source, i) => put(i, positions[source * 3], positions[source * 3 + 1], positions[source * 3 + 2]));
+    for (let i = 0; i < cloth.length; i += 3) put(used.length + i / 3, cloth[i], cloth[i + 1], cloth[i + 2]);
     let top = 0;
     for (let i = 1; i < out.length; i += 3) top = Math.max(top, out[i]);
     return { positions: out, top };
@@ -292,7 +455,7 @@ async function bakeAvatar(name) {
   const poses = {};
   const stills = (key, make) => {
     make();
-    poses[key] = { hi: capture("hi"), lo: capture("lo"), far: capture("far") };
+    poses[key] = { hi: capture("hi", undefined, key), lo: capture("lo", undefined, key), far: capture("far", undefined, key) };
   };
 
   stills("stand", () => setPose(ANIM(gender, "idle_neutral_01"), 0.3));
@@ -304,29 +467,29 @@ async function bakeAvatar(name) {
   stills("sitrest", () => setPose(ANIM(gender, "sit_chair_breathe_01"), 0.5));
   stills("strap", () => {
     setPose(ANIM(gender, "idle_neutral_01"), 0.3);
-    const shoulder = new Vector3();
-    clavicleR.getWorldPosition(shoulder);
-    const head = new Vector3();
-    headBone.getWorldPosition(head);
-    const target = shoulder.clone();
-    // The ring hangs a little ahead of the shoulder, about a hand above the head.
-    target.y = head.y + 0.28 / scale;
-    const forward = new Vector3();
-    forward.subVectors(toeWorld(), footWorld()).setY(0).normalize();
-    target.addScaledVector(forward, 0.08 / scale);
-    reach(root, "r", target, new Vector3(0, -0.2, 0).addScaledVector(forward, -1));
-    void neck;
-    void handR;
+    root.updateMatrixWorld(true);
+    const positions = skinnedPositions(vertices);
+    let lowest = Infinity;
+    for (let i = 1; i < positions.length; i += 3) lowest = Math.min(lowest, positions[i]);
+    const shoulder = skeletonBones.upR.getWorldPosition(new Vector3());
+    const forward = new Vector3().subVectors(toeWorld(), footWorld()).setY(0).normalize();
+    const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
+    // The wrist just under the ring, straight up from the shoulder and a little ahead of it.
+    const target = shoulder.clone().addScaledVector(forward, 0.08 / scale);
+    target.y = lowest + (RING_HEIGHT - 0.07) / scale;
+    reach(root, "r", target, right.multiplyScalar(0.7).add(new Vector3(0, -0.3, 0)));
   });
   stills("sitphone", () => {
     setPose(ANIM(gender, "sit_chair_idle_neutral_01"), 0.3);
-    const chest = new Vector3();
-    clavicleR.getWorldPosition(chest);
+    root.updateMatrixWorld(true);
     const forward = new Vector3().subVectors(toeWorld(), footWorld()).setY(0).normalize();
-    const target = chest.clone();
-    target.y -= 0.2 / scale;
-    target.addScaledVector(forward, 0.26 / scale);
-    reach(root, "r", target, new Vector3(0, -1, 0));
+    const right = new Vector3().crossVectors(forward, new Vector3(0, 1, 0)).normalize();
+    // Held up in front of the chest, elbow easy at the side, as anyone reads a phone on a bench.
+    const target = clavicleR.getWorldPosition(new Vector3());
+    target.addScaledVector(new Vector3(0, 1, 0), -0.26 / scale);
+    target.addScaledVector(forward, 0.27 / scale);
+    target.addScaledVector(right, -0.06 / scale);
+    reach(root, "r", target, right.multiplyScalar(0.55).add(new Vector3(0, -1, 0)));
   });
 
   function toeWorld() {
@@ -355,17 +518,16 @@ async function bakeAvatar(name) {
     walk.stride = start.distanceTo(end) * scale;
     for (let frame = 0; frame < WALK_FRAMES; frame++) {
       mixer.setTime((clip.duration * frame) / WALK_FRAMES);
-      walk.push(capture("lo", heading));
+      walk.push(capture("lo", heading, "walk"));
     }
   }
 
   return {
-    name,
+    name: castId(member),
+    outfit: member.label,
     female: gender === "f",
     triangles: indices.length / 3,
-    lods: Object.fromEntries(
-      Object.entries(lods).map(([lod, data]) => [lod, { grey: data.used.map((v) => Math.round(vertices[v].grey)), part: data.used.map((v) => vertices[v].part), indices: data.indices }]),
-    ),
+    lods,
     poses,
     walk,
     walkStride: walk.stride,
@@ -388,7 +550,7 @@ function packStill(still, indices) {
   return new Uint8Array(out.buffer);
 }
 
-const names = only.length ? only : readdirSync(join(source, "avatars")).sort();
+const members = only.length ? CAST.filter((member) => only.includes(castId(member))) : CAST;
 const chunks = [];
 let offset = 0;
 const push = (bytes) => {
@@ -403,10 +565,11 @@ const push = (bytes) => {
 };
 
 const index = { quant: QUANT, stride: 10, avatars: [] };
-for (const name of names) {
+for (const member of members) {
   const started = Date.now();
-  const avatar = await bakeAvatar(name);
-  const entry = { name, female: avatar.female, lods: {}, poses: {}, walk: [], walkStride: +avatar.walkStride.toFixed(3) };
+  const avatar = await bakeAvatar(member);
+  const name = avatar.name;
+  const entry = { name, outfit: avatar.outfit, female: avatar.female, lods: {}, poses: {}, walk: [], walkStride: +avatar.walkStride.toFixed(3) };
   for (const lod of ["hi", "lo", "far"]) {
     const data = avatar.lods[lod];
     entry.lods[lod] = {
@@ -422,7 +585,7 @@ for (const name of names) {
   }
   for (const still of avatar.walk) entry.walk.push(push(packStill(still, avatar.lods.lo.indices)));
   index.avatars.push(entry);
-  console.log(`${name}: source ${avatar.triangles} tris, hi ${entry.lods.hi.triangles}, lo ${entry.lods.lo.triangles}, height ${entry.poses.stand.top}m, sit ${entry.poses.sit.top}m, stride ${entry.walkStride}m (${Date.now() - started} ms)`);
+  console.log(`${name}: hi ${entry.lods.hi.triangles}, lo ${entry.lods.lo.triangles}, far ${entry.lods.far.triangles}, height ${entry.poses.stand.top}m, sit ${entry.poses.sit.top}m (${Date.now() - started} ms)`);
 }
 
 mkdirSync(output, { recursive: true });

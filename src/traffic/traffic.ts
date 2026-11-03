@@ -25,7 +25,7 @@ const RICKSHAW_SEATS = {
   rickshaw_cycle: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
 };
 
-const WALKING_CAST = ["Male_Adult_15", "Female_Adult_06", "Male_Adult_08", "Female_Adult_10", "Female_Adult_05", "Male_Adult_17"];
+const WALKING_CAST = ["Male_Adult_08", "Female_Adult_10", "Female_Adult_02-shalwar", "Male_Adult_15", "Female_Adult_07-shari", "Male_Adult_09", "Female_Adult_15-shalwar", "Male_Adult_02-panjabi"];
 const PER_FRAME_POOL = 14;
 /** The band of pavement people walk in: inside the kerb's poles and trees, outside the stalls and stairs. */
 const WALK_INNER = ROAD_HALF + 1.45;
@@ -39,7 +39,7 @@ const sideStreetY = (z: number): number => {
 /** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
 function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
   const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
-  const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_15");
+  const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_02-lungi");
   b.at(seat.pullerX, seat.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "far"), 0.9), -Math.PI / 2);
   const fare = rng.int(0, assets.avatars.length - 1);
   b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "far"), 1.1), -Math.PI / 2);
