@@ -165,11 +165,12 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       });
 
       for (const counts of walkCounts) counts.fill(0);
-      const cycle = 1.05;
       for (const walker of walkers) {
         const travelled = walker.base + walker.direction * walker.speed * time;
         const s = from + (((travelled - from) % WINDOW) + WINDOW) % WINDOW;
-        const frame = Math.floor(((time / cycle + walker.phase) % 1) * frames) % frames;
+        // Feet keep to the ground: the cycle advances with the distance covered, not with the clock.
+        const stride = assets.avatars[cast[walker.avatar]!]!.walkStride;
+        const frame = Math.floor((((walker.speed * time) / stride + walker.phase) % 1) * frames) % frames;
         const slot = walkCounts[walker.avatar]![frame]!;
         if (slot >= PER_FRAME_POOL || !seen(distance - s, 1, walker.z)) continue;
         walkCounts[walker.avatar]![frame] = slot + 1;

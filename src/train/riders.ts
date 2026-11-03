@@ -20,8 +20,6 @@ export interface Riders {
 }
 
 const STANDING: ReadonlySet<PersonPose> = new Set(["stand", "look", "phone", "music", "bag", "strap"]);
-/** One walk cycle covers about two strides. */
-const CYCLE_METRES = 1.5;
 const PICK_RADIUS = 0.32;
 
 interface Standing {
@@ -38,6 +36,9 @@ interface Standing {
 interface Walker {
   object: Mesh;
   frames: BufferGeometry[];
+  /** Standing, for the pause at the end of a stretch: never frozen mid-step. */
+  still: BufferGeometry;
+  stride: number;
   z: number;
   x: number;
   from: number;
@@ -46,6 +47,8 @@ interface Walker {
   heading: 1 | -1;
   facing: number;
   pause: number;
+  /** Seconds before the end of a pause at which the turn begins. */
+  turnAfter: number;
   walked: number;
 }
 
@@ -110,19 +113,21 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
     for (let i = 0; i + 1 < stops.length; i++) {
       const from = stops[i]! + 0.45;
       const to = stops[i + 1]! - 0.45;
-      if (to - from > 2.2) stretches.push([from, to]);
+      // Long enough to read as going somewhere, not as a person pacing on the spot.
+      if (to - from > 3.6) stretches.push([from, to]);
     }
     const count = Math.min(stretches.length, rng.int(1, 2));
     const cast = assets.avatars.map((_, i) => i);
     for (const [from, to] of rng.shuffled(stretches).slice(0, count)) {
       const avatar = rng.pick(cast);
       const frames = Array.from({ length: assets.walkFrames }, (_, f) => stampOne((b) => b.stamp(assets.walkFrame(avatar, f))));
+      const still = stampOne((b) => b.stamp(assets.person(avatar, "stand", "lo")));
       const object = new Mesh(frames[0]!, material);
       object.frustumCulled = false;
       group.add(object);
       const x = rng.range(from, to);
       const heading = rng.chance(0.5) ? 1 : -1;
-      walkers.push({ object, frames, z: aisle, x, from, to, speed: rng.range(0.75, 1.05), heading, facing: (heading * Math.PI) / 2, pause: 0, walked: rng.range(0, 3) });
+      walkers.push({ object, frames, still, stride: assets.avatars[avatar]!.walkStride, z: aisle, x, from, to, speed: rng.range(0.75, 1.05), heading, facing: (heading * Math.PI) / 2, pause: 0, turnAfter: 1.4, walked: rng.range(0, 3) });
     }
     car.riders.add(group);
     return group;
@@ -158,20 +163,21 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
       for (const w of walkers) {
         if (w.pause > 0) {
           w.pause -= dt;
-          // Turning round on the spot before setting off back.
-          w.facing += ((w.heading * Math.PI) / 2 - w.facing) * (1 - Math.exp(-dt * 5));
-          w.object.geometry = w.frames[0]!;
+          // Stops first, then turns round unhurriedly, then sets off back.
+          if (w.pause < w.turnAfter) w.facing += ((w.heading * Math.PI) / 2 - w.facing) * (1 - Math.exp(-dt * 3.5));
+          w.object.geometry = w.still;
         } else {
-          w.facing += ((w.heading * Math.PI) / 2 - w.facing) * (1 - Math.exp(-dt * 5));
+          w.facing = (w.heading * Math.PI) / 2;
           const step = w.speed * dt;
           w.x += w.heading * step;
           w.walked += step;
           if ((w.heading > 0 && w.x >= w.to) || (w.heading < 0 && w.x <= w.from)) {
             w.x = Math.max(w.from, Math.min(w.to, w.x));
             w.heading = w.heading > 0 ? -1 : 1;
-            w.pause = rng.range(1.2, 4);
+            w.pause = rng.range(2.5, 6);
+            w.turnAfter = 1.4;
           }
-          const frame = Math.floor((w.walked / CYCLE_METRES) * w.frames.length) % w.frames.length;
+          const frame = Math.floor((w.walked / w.stride) * w.frames.length) % w.frames.length;
           w.object.geometry = w.frames[frame]!;
         }
         w.object.position.set(w.x, 0, w.z);

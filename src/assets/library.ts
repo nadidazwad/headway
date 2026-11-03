@@ -19,7 +19,8 @@ interface PeopleIndex {
     lods: { hi: LodEntry; lo: LodEntry };
     poses: Record<PersonPose, { hi: number; lo: number; top: number }>;
     walk: number[];
-    walkDuration: number;
+    /** Metres one full walk cycle covers: two steps. */
+    walkStride: number;
   }>;
 }
 
@@ -38,7 +39,7 @@ interface PropIndex {
 }
 
 export interface Assets {
-  avatars: ReadonlyArray<{ name: string; female: boolean; walkDuration: number }>;
+  avatars: ReadonlyArray<{ name: string; female: boolean; walkStride: number }>;
   person(avatar: number, pose: PersonPose, lod: "hi" | "lo"): Stampable;
   walkFrame(avatar: number, frame: number): Stampable;
   readonly walkFrames: number;

@@ -244,21 +244,25 @@ async function bakeAvatar(name) {
   const handR = findBone(root, "r_hand", "r hand");
   const neck = findBone(root, "neck");
   const clavicleR = findBone(root, "r_clavicle", "r clavicle");
+  const thighL = findBone(root, "l_thigh", "l thigh");
+  const thighR = findBone(root, "r_thigh", "r thigh");
 
   const scale = metres;
+  /** Which way the body faces, from across the hips. A foot will not do: lifted, its toe points down and its heading is noise. */
+  const bodyHeading = () => {
+    root.updateMatrixWorld(true);
+    const left = thighL.getWorldPosition(new Vector3());
+    const right = thighR.getWorldPosition(new Vector3());
+    return Math.atan2(right.z - left.z, left.x - right.x);
+  };
   /** One still of the current skeleton, normalised: feet on y = 0, pelvis over the origin, facing +Z. */
-  const capture = (lod, keepRoot = null) => {
+  const capture = (lod, heading = bodyHeading()) => {
     root.updateMatrixWorld(true);
     const positions = skinnedPositions(vertices);
     let lowest = Infinity;
     for (let i = 1; i < positions.length; i += 3) lowest = Math.min(lowest, positions[i]);
-    const p = new Vector3();
-    pelvis.getWorldPosition(p);
-    const foot = new Vector3(), toe = new Vector3();
-    footL.getWorldPosition(foot);
-    toeL.getWorldPosition(toe);
-    const anchor = keepRoot ?? { x: p.x, z: p.z };
-    const heading = keepRoot?.heading ?? Math.atan2(toe.x - foot.x, toe.z - foot.z);
+    const anchor = new Vector3();
+    pelvis.getWorldPosition(anchor);
     const c = Math.cos(heading), s = Math.sin(heading);
     const out = new Float32Array(lods[lod].used.length * 3);
     lods[lod].used.forEach((source, i) => {
@@ -340,11 +344,20 @@ async function bakeAvatar(name) {
     const mixer = new AnimationMixer(root);
     const action = mixer.clipAction(clip);
     action.play();
+    // One heading for the whole cycle, the way the hips travel, so the swing of the pelvis stays in.
+    const pelvisAt = (time) => {
+      mixer.setTime(time);
+      root.updateMatrixWorld(true);
+      return pelvis.getWorldPosition(new Vector3());
+    };
+    const start = pelvisAt(0);
+    const end = pelvisAt(clip.duration * 0.999);
+    const heading = Math.atan2(end.x - start.x, end.z - start.z);
+    walk.stride = start.distanceTo(end) * scale;
     for (let frame = 0; frame < WALK_FRAMES; frame++) {
       mixer.setTime((clip.duration * frame) / WALK_FRAMES);
-      walk.push(capture("lo"));
+      walk.push(capture("lo", heading));
     }
-    walk.duration = clip.duration;
   }
 
   return {
@@ -356,7 +369,7 @@ async function bakeAvatar(name) {
     ),
     poses,
     walk,
-    walkDuration: walk.duration,
+    walkStride: walk.stride,
   };
 }
 
@@ -394,7 +407,7 @@ const index = { quant: QUANT, stride: 10, avatars: [] };
 for (const name of names) {
   const started = Date.now();
   const avatar = await bakeAvatar(name);
-  const entry = { name, female: avatar.female, lods: {}, poses: {}, walk: [], walkDuration: avatar.walkDuration };
+  const entry = { name, female: avatar.female, lods: {}, poses: {}, walk: [], walkStride: +avatar.walkStride.toFixed(3) };
   for (const lod of ["hi", "lo"]) {
     const data = avatar.lods[lod];
     entry.lods[lod] = {
@@ -410,7 +423,7 @@ for (const name of names) {
   }
   for (const still of avatar.walk) entry.walk.push(push(packStill(still, avatar.lods.lo.indices)));
   index.avatars.push(entry);
-  console.log(`${name}: source ${avatar.triangles} tris, hi ${entry.lods.hi.triangles}, lo ${entry.lods.lo.triangles}, height ${entry.poses.stand.top}m, sit ${entry.poses.sit.top}m (${Date.now() - started} ms)`);
+  console.log(`${name}: source ${avatar.triangles} tris, hi ${entry.lods.hi.triangles}, lo ${entry.lods.lo.triangles}, height ${entry.poses.stand.top}m, sit ${entry.poses.sit.top}m, stride ${entry.walkStride}m (${Date.now() - started} ms)`);
 }
 
 mkdirSync(output, { recursive: true });
