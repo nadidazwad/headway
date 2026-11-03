@@ -40,9 +40,46 @@ const rig = createCameraRig({
 });
 rig.snap();
 
+// Starts modest on integrated graphics and adapts to what the machine actually delivers.
+const gl = pipeline.renderer.getContext();
+const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
+const gpuName = rendererInfo ? String(gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL)) : "";
+const integrated = /intel|mali|adreno|powervr|swiftshader|llvmpipe|apple gpu/i.test(gpuName);
+const maxRatio = params.has("pr") ? Number(params.get("pr")) : Math.min(devicePixelRatio || 1, 2);
+const quality = { ratio: integrated ? Math.min(maxRatio, 1) : maxRatio, samples: params.has("msaa") ? Number(params.get("msaa")) : integrated ? 2 : 4, sum: 0, frames: 0, calm: 0, locked: params.has("pr") };
+pipeline.setSamples(quality.samples);
+
 function resize(): void {
-  pipeline.setPixelRatio(params.has("pr") ? Number(params.get("pr")) : Math.min(devicePixelRatio || 1, 2));
+  pipeline.setPixelRatio(quality.ratio);
   pipeline.resize(innerWidth, innerHeight);
+}
+
+/** Trades sharpness for smoothness, then wins it back. Runs on measured frame times only. */
+function adaptQuality(dt: number): void {
+  if (quality.locked || document.hidden) return;
+  quality.sum += dt;
+  quality.frames += 1;
+  if (quality.frames < 45) return;
+  const average = quality.sum / quality.frames;
+  quality.sum = 0;
+  quality.frames = 0;
+  if (average > 1 / 42) {
+    quality.calm = 0;
+    if (quality.ratio > 0.7) {
+      quality.ratio = Math.max(0.7, quality.ratio - (average > 1 / 25 ? 0.2 : 0.1));
+      resize();
+    } else if (quality.samples > 0) {
+      quality.samples = 0;
+      pipeline.setSamples(0);
+    }
+  } else if (average < 1 / 57) {
+    quality.calm += 1;
+    if (quality.calm >= 4 && quality.ratio < maxRatio) {
+      quality.ratio = Math.min(maxRatio, quality.ratio + 0.1);
+      quality.calm = 0;
+      resize();
+    }
+  }
 }
 window.addEventListener("resize", resize);
 resize();
@@ -343,7 +380,7 @@ function frame(now: number): void {
     }
   }
 
-  world.update(distance, 340, 300);
+  world.update(distance, 320, 260);
   train.update(state.doors, time, state.speedKmh);
   traffic.update(distance, time);
   runTour(now);
@@ -352,6 +389,8 @@ function frame(now: number): void {
   updateTags(dt);
   overlay.setReadout(state);
   pipeline.setViewWidth(rig.width);
+  world.cull(rig.camera);
+  adaptQuality(dt);
   // Passing every minute or two: never long enough to feel scheduled, never so rare it surprises.
   if (!reducedMotion) {
     const relative = OPPOSING_SPEED + (state.speedKmh / 3.6) * (TIME_SCALE / VISUAL_SCALE);

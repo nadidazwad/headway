@@ -1,12 +1,15 @@
-import { Box3, Group, Mesh, Sphere, Vector3, type ShaderMaterial } from "three";
+import { Box3, Frustum, Group, Matrix4, Mesh, Vector3, type Camera, type ShaderMaterial } from "three";
 import { toBufferGeometry } from "../render";
 import type { ChunkData } from "./generate";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, WORLD_TOP } from "./layout";
+import { CHUNK_LENGTH } from "./layout";
 
 export interface World {
   group: Group;
   /** Keeps chunks in view around the train. Chunks build in workers and appear when ready. */
   update(distance: number, ahead: number, behind: number): void;
+  /** Hides every piece of city outside the camera's view. Call after the camera has moved. */
+  cull(camera: Camera): void;
+  readonly drawnTriangles: number;
   /** How many chunks needed for the current view have not arrived yet. */
   readonly pending: number;
   readonly triangles: number;
@@ -14,10 +17,27 @@ export interface World {
   whenReady(): Promise<void>;
 }
 
+interface LoadedPart {
+  mesh: Mesh;
+  box: Box3;
+  triangles: number;
+}
+
+interface LoadedChunk {
+  group: Group;
+  parts: LoadedPart[];
+  triangles: number;
+}
+
+const frustum = new Frustum();
+const projection = new Matrix4();
+const shifted = new Box3();
+const offset = new Vector3();
+
 /** Streams the endless city past a train that stays at the origin, so precision never decays. */
 export function createWorld(material: ShaderMaterial, seed: number): World {
   const group = new Group();
-  const meshes = new Map<number, Mesh & { triangles?: number }>();
+  const meshes = new Map<number, LoadedChunk>();
   const requested = new Set<number>();
   const waiters: Array<() => void> = [];
   const queue: ChunkData[] = [];
@@ -27,6 +47,7 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
   const wanted: number[] = [];
   let needed = new Set<number>();
   let triangles = 0;
+  let drawn = 0;
   let currentDistance = 0;
 
   const dispatch = (): void => {
@@ -48,20 +69,19 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
     idle.push(worker);
   }
 
-  const bounds = new Box3(new Vector3(-CHUNK_LENGTH, 0, FAR_BACK), new Vector3(0, WORLD_TOP, FAR_FRONT));
-  const sphere = bounds.getBoundingSphere(new Sphere());
-
   const install = (chunk: ChunkData): void => {
     requested.delete(chunk.index);
     if (!needed.has(chunk.index)) return;
-    const geometry = toBufferGeometry(chunk.mesh);
-    geometry.boundingBox = bounds;
-    geometry.boundingSphere = sphere;
-    const mesh: Mesh & { triangles?: number } = new Mesh(geometry, material);
-    mesh.triangles = chunk.triangles;
-    mesh.matrixAutoUpdate = true;
-    meshes.set(chunk.index, mesh);
-    group.add(mesh);
+    const chunkGroup = new Group();
+    const parts: LoadedPart[] = chunk.parts.map((part) => {
+      const mesh = new Mesh(toBufferGeometry(part), material);
+      // Culling happens against tight boxes in cull(), not three's bounding spheres.
+      mesh.frustumCulled = false;
+      chunkGroup.add(mesh);
+      return { mesh, box: new Box3(new Vector3(...part.min), new Vector3(...part.max)), triangles: part.indices.length / 3 };
+    });
+    meshes.set(chunk.index, { group: chunkGroup, parts, triangles: chunk.triangles });
+    group.add(chunkGroup);
     triangles += chunk.triangles;
   };
 
@@ -85,11 +105,11 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
           wanted.push(index);
         }
       }
-      for (const [index, mesh] of meshes) {
+      for (const [index, chunk] of meshes) {
         if (needed.has(index)) continue;
-        group.remove(mesh);
-        mesh.geometry.dispose();
-        triangles -= mesh.triangles ?? 0;
+        group.remove(chunk.group);
+        for (const part of chunk.parts) part.mesh.geometry.dispose();
+        triangles -= chunk.triangles;
         meshes.delete(index);
       }
       for (let i = wanted.length - 1; i >= 0; i--) {
@@ -102,10 +122,26 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
       // One upload a frame, so a new block of city never costs a visible hitch.
       const next = queue.shift();
       if (next) install(next);
-      for (const [index, mesh] of meshes) {
-        mesh.position.x = distance - index * CHUNK_LENGTH;
+      for (const [index, chunk] of meshes) {
+        chunk.group.position.x = distance - index * CHUNK_LENGTH;
       }
       if (pending() === 0) for (const resolve of waiters.splice(0)) resolve();
+    },
+    cull(camera) {
+      projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projection);
+      drawn = 0;
+      for (const chunk of meshes.values()) {
+        offset.set(chunk.group.position.x, 0, 0);
+        for (const part of chunk.parts) {
+          shifted.copy(part.box).translate(offset);
+          part.mesh.visible = frustum.intersectsBox(shifted);
+          if (part.mesh.visible) drawn += part.triangles;
+        }
+      }
+    },
+    get drawnTriangles() {
+      return drawn;
     },
     get pending() {
       return pending();

@@ -39,6 +39,8 @@ export interface Pipeline {
   /** Lets lines between small parts fade as the camera pulls back, so a wide view never turns to noise. */
   setViewWidth(metres: number): void;
   setPixelRatio(ratio: number): void;
+  /** Multisample count of the main pass: 4, 2 or 0. */
+  setSamples(samples: number): void;
   resize(width: number, height: number): void;
   render(scene: Scene, camera: Camera, focusDepth: number): void;
   readonly pixelRatio: number;
@@ -103,7 +105,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uSkyTop: { value: new Color(0xf6efe0) },
       uSkyBottom: { value: new Color(0xf7ecd9) },
       uInk: { value: new Color(0.42, 0.42, 0.45) },
-      uHaze: { value: new Vector2(10, 105) },
+      uHaze: { value: new Vector2(6, 88) },
       uFineInk: { value: 0.6 },
     },
   });
@@ -150,6 +152,11 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     setPixelRatio(ratio) {
       pixelRatio = ratio;
       applySize();
+    },
+    setSamples(samples) {
+      if (target.samples === samples) return;
+      target.samples = samples;
+      target.dispose();
     },
     resize(width, height) {
       cssWidth = width;

@@ -5,6 +5,9 @@ export type Vec3 = readonly [number, number, number];
 export interface MeshData {
   vertices: ArrayBuffer;
   indices: Uint32Array<ArrayBuffer>;
+  /** Tight bounds of everything drawn, so a piece of city off screen costs nothing. */
+  min: Vec3;
+  max: Vec3;
 }
 
 export const STRIDE = 24;
@@ -41,6 +44,8 @@ export class Batch {
   private matrix: Mat = identity();
   private stack: Mat[] = [];
   private partId = 1;
+  private readonly lo: [number, number, number] = [Infinity, Infinity, Infinity];
+  private readonly hi: [number, number, number] = [-Infinity, -Infinity, -Infinity];
 
   /** Turn off for parts that move, so a face hidden at rest is still there when it turns. */
   cull = true;
@@ -152,9 +157,18 @@ export class Batch {
     const m = this.matrix;
     const index = this.vertexCount++;
     const f = index * 6;
-    this.f32[f] = m[0]! * x + m[1]! * y + m[2]! * z + m[3]!;
-    this.f32[f + 1] = m[4]! * x + m[5]! * y + m[6]! * z + m[7]!;
-    this.f32[f + 2] = m[8]! * x + m[9]! * y + m[10]! * z + m[11]!;
+    const wx = m[0]! * x + m[1]! * y + m[2]! * z + m[3]!;
+    const wy = m[4]! * x + m[5]! * y + m[6]! * z + m[7]!;
+    const wz = m[8]! * x + m[9]! * y + m[10]! * z + m[11]!;
+    this.f32[f] = wx;
+    this.f32[f + 1] = wy;
+    this.f32[f + 2] = wz;
+    if (wx < this.lo[0]) this.lo[0] = wx;
+    if (wy < this.lo[1]) this.lo[1] = wy;
+    if (wz < this.lo[2]) this.lo[2] = wz;
+    if (wx > this.hi[0]) this.hi[0] = wx;
+    if (wy > this.hi[1]) this.hi[1] = wy;
+    if (wz > this.hi[2]) this.hi[2] = wz;
     const byte = index * STRIDE;
     this.i8[byte + 12] = Math.round((m[0]! * nx + m[1]! * ny + m[2]! * nz) * 127);
     this.i8[byte + 13] = Math.round((m[4]! * nx + m[5]! * ny + m[6]! * nz) * 127);
@@ -395,6 +409,8 @@ export class Batch {
     return {
       vertices: this.buffer.slice(0, this.vertexCount * STRIDE),
       indices: this.indices.slice(0, this.indexCount),
+      min: [this.lo[0], this.lo[1], this.lo[2]],
+      max: [this.hi[0], this.hi[1], this.hi[2]],
     };
   }
 }

@@ -72,12 +72,12 @@ export function createTraffic(material: ShaderMaterial, seed: number): Traffic {
     { z: -12.2, direction: -1, speed: 1.7 },
   ];
   const mix: VehicleKind[][] = [
-    ["car", "car", "bike", "bus", "car"],
-    ["car", "cng", "bus", "cng", "bike", "car", "cng"],
+    ["car", "car", "bike", "cng", "car", "car", "bus"],
+    ["car", "cng", "cng", "bike", "car", "cng", "bus", "cng", "car"],
     ["cng", "cng", "rickshaw", "car", "cng", "bike"],
     ["rickshaw", "rickshaw", "rickshaw", "cng", "rickshaw", "rickshaw"],
-    ["car", "car", "bike", "bus", "car"],
-    ["car", "cng", "bus", "cng", "bike", "car", "cng"],
+    ["car", "car", "bike", "cng", "car", "car", "bus"],
+    ["car", "cng", "cng", "bike", "car", "cng", "bus", "cng", "car"],
     ["cng", "cng", "rickshaw", "car", "cng", "bike"],
     ["rickshaw", "rickshaw", "rickshaw", "cng", "rickshaw", "rickshaw"],
   ];

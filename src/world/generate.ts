@@ -11,8 +11,30 @@ import { buildViaduct } from "./viaduct";
 
 export interface ChunkData {
   index: number;
-  mesh: MeshData;
+  /** One stretch of city, cut into pieces small enough to skip when they are off screen. */
+  parts: MeshData[];
   triangles: number;
+}
+
+const CELL = 20;
+
+/** Hands out a separate mesh per cell of the chunk's plan. */
+class Pieces {
+  private readonly cells = new Map<number, Batch>();
+
+  at(x: number, z: number): Batch {
+    const key = Math.floor(x / CELL) * 1000 + Math.floor(z / CELL);
+    let batch = this.cells.get(key);
+    if (!batch) {
+      batch = new Batch(1 << 12);
+      this.cells.set(key, batch);
+    }
+    return batch;
+  }
+
+  get all(): Batch[] {
+    return [...this.cells.values()];
+  }
 }
 
 /** Tallest a building may stand here without hiding the train from any camera in the tour. */
@@ -27,7 +49,7 @@ function lodAt(z: number): 0 | 1 | 2 {
   return distance < 62 ? 0 : distance < 110 ? 1 : 2;
 }
 
-function fillRow(b: Batch, rng: Rng, x0: number, x1: number, z0: number, z1: number, streetFront: boolean, gaps: Array<[number, number]>): void {
+function fillRow(pieces: Pieces, rng: Rng, x0: number, x1: number, z0: number, z1: number, streetFront: boolean, gaps: Array<[number, number]>): void {
   let cursor = x0;
   while (cursor < x1 - 5) {
     const gap = gaps.find(([a, b2]) => cursor >= a - 3 && cursor < b2);
@@ -42,6 +64,7 @@ function fillRow(b: Batch, rng: Rng, x0: number, x1: number, z0: number, z1: num
       continue;
     }
     const inset = rng.range(0, 1.4);
+    const b = pieces.at(cursor + width / 2, (z0 + z1) / 2);
     const plot: Plot = {
       x0: cursor,
       x1: cursor + width - rng.range(0.3, 1.1),
@@ -82,13 +105,15 @@ export function generateChunk(seed: number, index: number): ChunkData {
   const start = index * CHUNK_LENGTH;
   const context: Context = { seed, chunk: index, start };
   const rng = new Rng(hashSeed(seed, index));
-  const b = new Batch(1 << 16);
+  const b = new Batch(1 << 15);
+  const street = new Batch(1 << 15);
+  const pieces = new Pieces();
 
   const stops = stationStops(start - CHUNK_LENGTH, start + CHUNK_LENGTH * 2);
   const stationCenters = stops.map((stop) => -(stop.center - start));
   const inStation = (x: number): boolean => stationCenters.some((center) => Math.abs(x - center) < STATION_HALF);
 
-  buildRoad(b, context, rng);
+  buildRoad(street, context, rng);
   buildViaduct(b, context, inStation);
   for (const stop of stops) buildStation(b, context, stop, rng);
 
@@ -97,9 +122,9 @@ export function generateChunk(seed: number, index: number): ChunkData {
     const width = rng.range(6.5, 9);
     const gapStart = -CHUNK_LENGTH + rng.range(4, CHUNK_LENGTH - width - 4);
     gaps.push([gapStart, gapStart + width]);
-    buildSideStreet(b, gapStart, gapStart + width, rng);
+    buildSideStreet(street, gapStart, gapStart + width, rng);
   }
-  buildStreetFurniture(b, context, rng, (x) => !gaps.some(([a, c]) => x > a && x < c));
+  buildStreetFurniture(street, context, rng, (x) => !gaps.some(([a, c]) => x > a && x < c));
 
   // Street trade and the odd foot-over-bridge, away from stations that already bridge the road.
   const clear = (x: number): boolean => !inStation(x) && !gaps.some(([a, c]) => x > a - 3 && x < c + 3);
@@ -107,18 +132,18 @@ export function generateChunk(seed: number, index: number): ChunkData {
     const x = rng.range(-CHUNK_LENGTH + 3, -3);
     if (!clear(x)) continue;
     const side = rng.chance(0.5) ? 1 : -1;
-    if (rng.chance(0.55)) teaStall(b, x, side, rng);
-    else fruitCart(b, x, side, rng);
+    if (rng.chance(0.55)) teaStall(street, x, side, rng);
+    else fruitCart(street, x, side, rng);
   }
   if (rng.chance(0.16)) {
     const x = rng.range(-CHUNK_LENGTH + 8, -8);
-    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(b, x, rng);
+    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(street, x, rng);
   }
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;
   const rowFront = (from: number, to: number, first: boolean): void => {
-    fillRow(b, rng, xMin, 0, from, to, first, gaps);
+    fillRow(pieces, rng, xMin, 0, from, to, first, gaps);
   };
   let z = FRONT_ROW;
   let first = true;
@@ -132,11 +157,13 @@ export function generateChunk(seed: number, index: number): ChunkData {
   first = true;
   while (z > FAR_BACK + 12) {
     const depth = rng.range(15, 24);
-    fillRow(b, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, false, gaps);
+    fillRow(pieces, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, false, gaps);
     z -= depth + rng.range(4.5, 7);
     first = false;
   }
   void first;
 
-  return { index, mesh: b.finish(), triangles: b.triangles };
+  const batches = [b, street, ...pieces.all];
+  const parts = batches.filter((batch) => batch.triangles > 0).map((batch) => batch.finish());
+  return { index, parts, triangles: batches.reduce((sum, batch) => sum + batch.triangles, 0) };
 }

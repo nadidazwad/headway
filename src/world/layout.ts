@@ -10,8 +10,8 @@ export const ROAD_HALF = 13.5;
 export const SIDEWALK_HALF = 18;
 /** The first row of blocks stands back on the near side, so the street under the line stays open. */
 export const FRONT_ROW = 25;
-export const FAR_BACK = -230;
-export const FAR_FRONT = 150;
+export const FAR_BACK = -175;
+export const FAR_FRONT = 130;
 export const WORLD_TOP = 130;
 
 export interface Context {

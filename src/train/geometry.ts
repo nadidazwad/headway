@@ -73,7 +73,7 @@ function wheel(b: Batch, x: number, z: number): void {
 /** Underframe boxes: inverters, batteries and compressors hung between the bogies. */
 function underframe(b: Batch, x0: number, x1: number): void {
   b.part();
-  b.box(x0, FLOOR_Y - 0.26, -HALF_WIDTH + 0.05, x1, FLOOR_Y, HALF_WIDTH - 0.05, c.under);
+  b.box(x0, FLOOR_Y - 0.26, -HALF_WIDTH + 0.05, x1, FLOOR_Y - 0.03, HALF_WIDTH - 0.05, c.under);
   const boxes = [
     [-5.4, 2.1, 0.5],
     [-2.6, 1.5, 0.44],
