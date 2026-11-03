@@ -2,7 +2,8 @@ import type { Assets } from "../assets";
 import { Batch, type MeshData } from "../geometry";
 import { Rng, hashSeed } from "../shared/rng";
 import { apartmentBlock, brickBlock, glassTower, stackedBlock, type Plot } from "./buildings";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, type Context } from "./layout";
+import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, localX, type Context } from "./layout";
+import { BRIDGE_HALF, STAIR_RUN, chunkPlan } from "./plan";
 import { palm, tree } from "./nature";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
@@ -125,31 +126,38 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
   const street = new Batch(1 << 15);
   const pieces = new Pieces();
 
-  buildRoad(street, context, rng);
-  buildViaduct(b, context);
-
+  const plan = chunkPlan(seed, index);
+  const toLocal = (distance: number): number => localX(context, distance);
   const gaps: Array<[number, number]> = [];
-  if (rng.chance(0.42)) {
-    const width = rng.range(6.5, 9);
-    const gapStart = -CHUNK_LENGTH + rng.range(4, CHUNK_LENGTH - width - 4);
-    gaps.push([gapStart, gapStart + width]);
-    buildSideStreet(street, gapStart, gapStart + width, rng);
-  }
-  buildStreetFurniture(street, context, rng, (x) => !gaps.some(([a, c]) => x > a && x < c));
+  const junction = plan.sideStreet;
+  if (junction) gaps.push([toLocal(junction.centre + junction.half), toLocal(junction.centre - junction.half)]);
+  buildRoad(street, context, rng, gaps);
+  buildViaduct(b, context);
+  if (junction) buildSideStreet(street, gaps[0]![0], gaps[0]![1], junction.zebra, rng);
 
-  // Street trade and the odd foot-over-bridge.
-  const clear = (x: number): boolean => !gaps.some(([a, c]) => x > a - 3 && x < c + 3);
+  // What keeps the pavement clear on each side: the junction, and a bridge's stair and columns.
+  const blocked: Array<{ from: number; to: number; side: 0 | 1 | -1 }> = gaps.map(([a, c]) => ({ from: a - 3, to: c + 3, side: 0 }));
+  const bridge = plan.footBridge;
+  if (bridge) {
+    const x = toLocal(bridge.centre);
+    blocked.push({ from: x - BRIDGE_HALF - 2.2, to: x + BRIDGE_HALF + 2.2, side: 0 });
+    bridge.stairs.forEach((direction, i) => {
+      const run = -direction * (STAIR_RUN + BRIDGE_HALF + 1.5);
+      blocked.push({ from: Math.min(x, x + run), to: Math.max(x, x + run), side: i === 0 ? 1 : -1 });
+    });
+  }
+  const clear = (x: number, side: number): boolean => !blocked.some((r) => x > r.from && x < r.to && (r.side === 0 || r.side === side));
+  buildStreetFurniture(street, context, rng, clear);
+
+  // Street trade, and now and then a foot-over-bridge.
   for (let i = 0; i < 3; i++) {
     const x = rng.range(-CHUNK_LENGTH + 3, -3);
-    if (!clear(x)) continue;
     const side = rng.chance(0.5) ? 1 : -1;
+    if (!clear(x - 2, side) || !clear(x + 2, side)) continue;
     if (rng.chance(0.55)) teaStall(street, assets, x, side, rng);
     else fruitCart(street, assets, x, side, rng);
   }
-  if (rng.chance(0.16)) {
-    const x = rng.range(-CHUNK_LENGTH + 8, -8);
-    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(street, assets, x, rng);
-  }
+  if (bridge) footBridge(street, assets, toLocal(bridge.centre), [-bridge.stairs[0], -bridge.stairs[1]], rng);
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;

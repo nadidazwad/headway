@@ -15,5 +15,5 @@ const actions = [
 ];
 const file = `/tmp/metro-tools/a-${name}.json`;
 writeFileSync(file, JSON.stringify(actions));
-const r = spawnSync("node", [process.env.HOME + "/.claude/skills/anatomy/scripts/drive.mjs", `http://127.0.0.1:5180/?seed=7&freeze=1&${query}`, "--actions", file, "--width", width, "--height", height, "--scale", scale], { encoding: "utf8", timeout: 170000 });
+const r = spawnSync("node", [process.env.HOME + "/.claude/skills/anatomy/scripts/drive.mjs", `http://127.0.0.1:5180/?${query}&seed=7&freeze=1`, "--actions", file, "--width", width, "--height", height, "--scale", scale], { encoding: "utf8", timeout: 170000 });
 console.log(r.stdout.split("\n").slice(-8).join("\n"), r.stderr);

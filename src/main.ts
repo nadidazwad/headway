@@ -26,16 +26,19 @@ scene.add(world.group);
 const train = createTrain(pipeline);
 scene.add(train.group);
 const assets = await loadAssets();
-const traffic = createTraffic(pipeline.solid, assets, seed);
-scene.add(traffic.group);
 // A second set on the other track, heading the other way.
 const opposing = createTrain(pipeline, -TRACK_Z);
 scene.add(opposing.group);
 
-/** Cruising at 100 km/h is the line's top speed; the world scrolls at a calmer visual rate. */
-const CRUISE = 13.5;
-const OPPOSING_SPEED = 13.5;
+/**
+ * The pace the reference film's city slides past at: about half a span a second. Slower than the
+ * line's real cruising speed, and close enough to the traffic's that a car below reads as driving.
+ */
+const CRUISE = 10.5;
+const OPPOSING_SPEED = 10.5;
 let distance = debugNumber("at") ?? 4000 + (seed % 5000);
+const traffic = createTraffic(pipeline.solid, assets, seed, distance);
+scene.add(traffic.group);
 let opposingX = -700;
 
 const WIDE_WIDTH = (): number => (innerWidth / innerHeight > 1.2 ? 62 : 46);
@@ -504,8 +507,7 @@ function frame(now: number): void {
 
   world.update(distance, 320, 260);
   train.update(time, distance);
-  if (moving) traffic.update(distance, time);
-  else traffic.update(distance, 0);
+  traffic.update(distance, moving ? time : 0, moving ? dt : 0);
 
   runTour(now);
   updateHover(dt);

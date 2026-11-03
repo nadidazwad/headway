@@ -3,35 +3,22 @@ import type { Assets } from "../assets";
 import { Batch } from "../geometry";
 import { toBufferGeometry } from "../render";
 import { Rng, hashSeed } from "../shared/rng";
+import { junctionsBetween } from "../world/plan";
+import { ROAD_HALF } from "../world/layout";
+import { CROSSERS_PER_JUNCTION, CROSS_MIX, createFlow, type Kind } from "./flow";
 import { buildVehicles } from "./vehicles";
-
-interface Agent {
-  kind: number;
-  lane: number;
-  base: number;
-  jitterZ: number;
-  phase: number;
-  instance: number;
-  tone: number;
-}
-
-interface Lane {
-  z: number;
-  direction: 1 | -1;
-  speed: number;
-}
 
 export interface Traffic {
   group: Group;
-  update(distance: number, time: number): void;
+  /** Advances the road by `dt` seconds with the train at `distance`, and redraws it. */
+  update(distance: number, time: number, dt: number): void;
 }
 
-const WINDOW = 520;
-const WINDOW_BEHIND = 300;
-
-type Kind = "sedan" | "suv" | "hatch" | "taxi" | "van" | "truck" | "delivery" | "cng" | "rickshaw_fan" | "rickshaw_cycle" | "bus_town" | "bike";
-
-const LENGTHS: Record<Kind, number> = { sedan: 4.4, suv: 4.7, hatch: 4, taxi: 4.4, van: 5, truck: 7, delivery: 6, cng: 2.9, rickshaw_fan: 2.7, rickshaw_cycle: 2.7, bus_town: 10.5, bike: 1.9 };
+const AHEAD = 220;
+const BEHIND = 300;
+/** Junctions in the window at once, at most, for sizing the pools of crossing vehicles. */
+const JUNCTIONS_AT_ONCE = 6;
+const KINDS: Kind[] = ["sedan", "suv", "hatch", "taxi", "van", "truck", "delivery", "cng", "rickshaw_fan", "rickshaw_cycle", "bus_town", "bike"];
 
 const RICKSHAW_SEATS = {
   rickshaw_fan: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
@@ -40,12 +27,10 @@ const RICKSHAW_SEATS = {
 
 const WALKING_CAST = ["Male_Adult_15", "Female_Adult_06", "Male_Adult_08", "Female_Adult_10", "Female_Adult_05", "Male_Adult_17"];
 const PER_FRAME_POOL = 14;
+/** The band of pavement people walk in: inside the kerb's poles and trees, outside the stalls and stairs. */
+const WALK_INNER = ROAD_HALF + 0.95;
+const WALK_OUTER = ROAD_HALF + 2.3;
 
-/**
- * Road and pavement life. Everything loops inside a window that rides with the train, so the
- * streets are never empty and cost the same however far the train has gone. Vehicles sharing a
- * lane share a speed, so they keep their spacing without any collision logic.
- */
 /** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
 function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
   const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
@@ -55,42 +40,26 @@ function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
   b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "lo"), 1.1), -Math.PI / 2);
 }
 
-export function createTraffic(material: ShaderMaterial, assets: Assets, seed: number): Traffic {
+/**
+ * Road and pavement life, drawn from the simulation in `flow.ts`. Each kind of vehicle is one
+ * instanced mesh; walkers are one instanced mesh per frame of their walk cycle.
+ */
+export function createTraffic(material: ShaderMaterial, assets: Assets, seed: number, startDistance: number): Traffic {
   const group = new Group();
   const rng = new Rng(hashSeed(seed, 77));
-  const kinds: Kind[] = ["sedan", "suv", "hatch", "taxi", "van", "truck", "delivery", "cng", "rickshaw_fan", "rickshaw_cycle", "bus_town", "bike"];
-
-  // Bangladesh drives on the left. Near lanes run the way the train does.
-  const lanes: Lane[] = [
-    { z: 3.4, direction: 1, speed: 3.9 },
-    { z: 6.4, direction: 1, speed: 3.1 },
-    { z: 9.4, direction: 1, speed: 2.3 },
-    { z: 12.1, direction: 1, speed: 1.6 },
-    { z: -3.4, direction: -1, speed: 4.2 },
-    { z: -6.4, direction: -1, speed: 3.2 },
-    { z: -9.4, direction: -1, speed: 2.4 },
-    { z: -12.1, direction: -1, speed: 1.7 },
-  ];
-  const fast: Kind[] = ["sedan", "sedan", "suv", "bike", "cng", "hatch", "taxi", "sedan", "bus_town"];
-  const middle: Kind[] = ["sedan", "cng", "cng", "bike", "suv", "cng", "bus_town", "van", "cng", "truck", "delivery"];
-  const slow: Kind[] = ["cng", "cng", "rickshaw_fan", "hatch", "cng", "bike", "van", "rickshaw_cycle"];
-  const kerb: Kind[] = ["rickshaw_fan", "rickshaw_cycle", "rickshaw_fan", "cng", "rickshaw_cycle", "rickshaw_fan"];
-  const mix: Kind[][] = [fast, middle, slow, kerb, fast, middle, slow, kerb];
-
-  const agents: Agent[] = [];
-  lanes.forEach((_, laneIndex) => {
-    let cursor = rng.range(0, 12);
-    while (cursor < WINDOW - 8) {
-      const name = rng.pick(mix[laneIndex]!);
-      const length = LENGTHS[name];
-      agents.push({ kind: kinds.indexOf(name), lane: laneIndex, base: cursor + length / 2, jitterZ: rng.range(-0.3, 0.3), phase: rng.range(0, 6), instance: 0, tone: rng.range(1.0, 1.25) });
-      cursor += length + rng.range(6, 34);
-    }
+  const flow = createFlow({
+    seed,
+    junctionsBetween: (from, to) => junctionsBetween(seed, from, to),
+    from: startDistance - BEHIND,
+    to: startDistance + AHEAD,
   });
+  // A minute of driving before anyone looks, so the queues and gaps have formed.
+  for (let i = 0; i < 600; i++) flow.step(0.1, i * 0.1 - 60, startDistance - BEHIND, startDistance + AHEAD);
 
+  const crossShare = (kind: Kind): number => (CROSS_MIX.includes(kind) ? JUNCTIONS_AT_ONCE * CROSSERS_PER_JUNCTION : 0);
   const bakedBike = buildVehicles().bike;
-  const instanced: InstancedMesh[] = kinds.map((name, kind) => {
-    const count = agents.filter((a) => a.kind === kind).length;
+  const instanced: InstancedMesh[] = KINDS.map((name) => {
+    const count = flow.vehicles.filter((v) => v.kind === name).length + crossShare(name);
     let geometry;
     if (name === "bike") {
       geometry = toBufferGeometry(bakedBike);
@@ -104,18 +73,16 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
     const mesh = new InstancedMesh(geometry, material, Math.max(count, 1));
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.frustumCulled = false;
-    mesh.count = count;
+    mesh.count = 0;
+    const color = new Color();
+    for (let i = 0; i < count; i++) {
+      const tone = rng.range(1.0, 1.25);
+      mesh.setColorAt(i, color.setRGB(tone, tone, tone));
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     group.add(mesh);
     return mesh;
   });
-  const counters = kinds.map(() => 0);
-  const color = new Color();
-  for (const agent of agents) {
-    agent.instance = counters[agent.kind]!++;
-    color.setRGB(agent.tone, agent.tone, agent.tone);
-    instanced[agent.kind]!.setColorAt(agent.instance, color);
-  }
-  for (const mesh of instanced) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
   // Walkers: a small cast, each with a real walk cycle. Each frame of each cycle is its own
   // instanced mesh, and every walker sits in the mesh for the frame it has reached.
@@ -134,11 +101,12 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       return mesh;
     }),
   );
+  const WINDOW = AHEAD + BEHIND;
   const walkers = Array.from({ length: 56 }, () => {
     const side = rng.chance(0.5) ? 1 : -1;
     return {
       avatar: rng.int(0, cast.length - 1),
-      z: side * rng.range(14.2, 17),
+      z: side * rng.range(WALK_INNER, WALK_OUTER),
       direction: (rng.chance(0.5) ? 1 : -1) as 1 | -1,
       speed: rng.range(1.05, 1.4),
       base: rng.range(0, WINDOW),
@@ -148,27 +116,41 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
 
   const dummy = new Object3D();
   const walkCounts = cast.map(() => new Array<number>(frames).fill(0));
+  const used = KINDS.map(() => 0);
+  const kindIndex = new Map(KINDS.map((k, i) => [k, i]));
+  let clock = 0;
+
+  const place = (kind: Kind, x: number, z: number, yaw: number): void => {
+    const k = kindIndex.get(kind)!;
+    const mesh = instanced[k]!;
+    if (used[k]! >= mesh.instanceMatrix.count) return;
+    dummy.position.set(x, 0.03, z);
+    dummy.rotation.set(0, yaw, 0);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(used[k]!++, dummy.matrix);
+  };
 
   return {
     group,
-    update(distance, time) {
-      const windowStart = distance - WINDOW_BEHIND;
-      for (const agent of agents) {
-        const lane = lanes[agent.lane]!;
-        const travelled = agent.base + lane.direction * lane.speed * time;
-        const s = windowStart + (((travelled - windowStart) % WINDOW) + WINDOW) % WINDOW;
-        dummy.position.set(distance - s, 0.03, lane.z + agent.jitterZ);
-        dummy.rotation.set(0, lane.direction > 0 ? 0 : Math.PI, 0);
-        dummy.updateMatrix();
-        instanced[agent.kind]!.setMatrixAt(agent.instance, dummy.matrix);
-      }
-      for (const mesh of instanced) mesh.instanceMatrix.needsUpdate = true;
+    update(distance, time, dt) {
+      clock += dt;
+      const from = distance - BEHIND;
+      const to = distance + AHEAD;
+      flow.step(Math.min(dt, 0.1), clock, from, to);
+      used.fill(0);
+      for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw);
+      // The model's nose points along -x at rest; a crosser heading +z turns a quarter left.
+      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2);
+      instanced.forEach((mesh, k) => {
+        mesh.count = used[k]!;
+        mesh.instanceMatrix.needsUpdate = true;
+      });
 
       for (const counts of walkCounts) counts.fill(0);
       const cycle = 1.05;
       for (const walker of walkers) {
         const travelled = walker.base + walker.direction * walker.speed * time;
-        const s = windowStart + (((travelled - windowStart) % WINDOW) + WINDOW) % WINDOW;
+        const s = from + (((travelled - from) % WINDOW) + WINDOW) % WINDOW;
         const frame = Math.floor(((time / cycle + walker.phase) % 1) * frames) % frames;
         const slot = walkCounts[walker.avatar]![frame]!;
         if (slot >= PER_FRAME_POOL) continue;

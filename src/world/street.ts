@@ -5,7 +5,8 @@ import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HAL
 import { tree } from "./nature";
 
 /** The stretch of main road under the viaduct, its median, kerbs and pavements. */
-export function buildRoad(b: Batch, context: Context, rng: Rng): void {
+/** `junctions` are the local x ranges where a side street meets the road and the median opens. */
+export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: ReadonlyArray<readonly [number, number]>): void {
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   b.part();
@@ -31,7 +32,7 @@ export function buildRoad(b: Batch, context: Context, rng: Rng): void {
   // The viaduct's shadow, thrown away from the sun onto the far lanes.
   b.part();
   b.quad([x0, 0.028, -5], [x1, 0.028, -5], [x1, 0.028, -14], [x0, 0.028, -14], 0xb4b3ad, [0, 1, 0]);
-  buildMedian(b, context);
+  buildMedian(b, context, junctions);
   for (const side of [1, -1]) buildPavement(b, context, side);
 }
 
@@ -43,12 +44,18 @@ function kerbStripes(b: Batch, context: Context, z: number, top: number, height:
   }
 }
 
-function buildMedian(b: Batch, context: Context): void {
-  b.part();
-  b.box(-CHUNK_LENGTH, 0, -MEDIAN_HALF, 0, 0.26, MEDIAN_HALF, city.soil);
-  // A low clipped hedge along the median, as under the real viaduct, broken only at each pier.
+function buildMedian(b: Batch, context: Context, junctions: ReadonlyArray<readonly [number, number]>): void {
+  // The median stops for a junction, so the cross street can get through.
+  const openings = junctions.map(([a, c]) => [a - 1.5, c + 1.5] as const);
+  const solid = [-CHUNK_LENGTH, ...openings.flat(), 0];
+  for (let i = 0; i + 1 < solid.length; i += 2) {
+    b.part();
+    b.box(solid[i]!, 0, -MEDIAN_HALF, solid[i + 1]!, 0.26, MEDIAN_HALF, city.soil);
+  }
+  // A low clipped hedge along the median, as under the real viaduct, broken at each pier and junction.
   const piersHere = latticeIn(context, SPAN).map((distance) => localX(context, distance));
-  const edges = [-CHUNK_LENGTH, ...piersHere.flatMap((x) => [x - 3.2, x + 3.2]).sort((a, c) => a - c), 0];
+  const breaks = [...piersHere.map((x) => [x - 3.2, x + 3.2] as const), ...openings].sort((a, c) => a[0] - c[0]);
+  const edges = [-CHUNK_LENGTH, ...breaks.flat(), 0];
   for (let i = 0; i + 1 < edges.length; i += 2) {
     const from = Math.max(edges[i]!, -CHUNK_LENGTH);
     const to = Math.min(edges[i + 1]!, 0);
@@ -76,13 +83,14 @@ function buildPavement(b: Batch, context: Context, side: number): void {
 }
 
 /** A side street running away from the main road, with its own crossing and building gap. */
-export function buildSideStreet(b: Batch, x0: number, x1: number, rng: Rng): void {
+export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean, rng: Rng): void {
   for (const [z0, z1] of [[SIDEWALK_HALF - 4.5, FAR_FRONT], [FAR_BACK, -SIDEWALK_HALF + 4.5]] as const) {
     b.part();
     b.quad([x0, 0.21, z1], [x1, 0.21, z1], [x1, 0.21, z0], [x0, 0.21, z0], 0x85848a, [0, 1, 0]);
   }
+  void rng;
   // Zebra crossing over the main road.
-  if (rng.chance(0.7)) {
+  if (zebra) {
     for (let z = -12.5; z < 12.5; z += 1.2) {
       if (Math.abs(z) < MEDIAN_HALF + 0.3) continue;
       b.part();
@@ -101,13 +109,14 @@ function sagging(a: Vec3, b: Vec3, sag: number): Vec3[] {
 }
 
 /** Street life along the pavement: trees, and concrete poles with their famous wire tangles. */
-export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clearX: (x: number) => boolean): void {
+export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear: (x: number, side: number) => boolean): void {
+  const clearX = (x: number, side: number): boolean => clear(x - 1.2, side) && clear(x + 1.2, side);
   const poleStep = 36;
   for (const side of [1, -1]) {
     const z = side * (ROAD_HALF + 0.75);
     for (const distance of latticeIn(context, poleStep, side > 0 ? 8 : 26)) {
       const x = localX(context, distance);
-      if (!clearX(x)) continue;
+      if (!clearX(x, side)) continue;
       b.part();
       b.bar([x, 0.2, z], [x, 9.2, z], 0.14, 0.09, 0xa9a59a, 6);
       b.part();
@@ -135,7 +144,7 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
     // Street lamps on long curved arms, as along the viaduct.
     for (const distance of latticeIn(context, 30, side > 0 ? 3 : 18)) {
       const x = localX(context, distance);
-      if (!clearX(x)) continue;
+      if (!clearX(x, side)) continue;
       const lampZ = side * (ROAD_HALF + 0.3);
       b.part();
       b.bar([x, 0.2, lampZ], [x, 8, lampZ], 0.07, 0.05, 0x7b8588, 6);
@@ -147,7 +156,7 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
     for (const distance of latticeIn(context, 15, side > 0 ? 5 : 11)) {
       if (!rng.chance(0.55)) continue;
       const x = localX(context, distance) + rng.range(-3, 3);
-      if (!clearX(x)) continue;
+      if (!clearX(x, side)) continue;
       const treeZ = side * (ROAD_HALF + 2.2);
       const h = rng.range(6.5, side > 0 ? 8.5 : 11);
       tree(b, x, treeZ, h, rng);

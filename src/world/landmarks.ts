@@ -4,6 +4,7 @@ import type { Assets, PersonPose } from "../assets";
 import { awnings, city } from "../shared/palette";
 import { posterUv } from "../signs/regions";
 import { ROAD_HALF, SIDEWALK_HALF } from "./layout";
+import { BRIDGE_HALF, STAIR_RUN } from "./plan";
 import type { Plot } from "./buildings";
 import { tree } from "./nature";
 
@@ -161,63 +162,144 @@ export function fruitCart(b: Batch, assets: Assets, x: number, side: number, rng
   bystander(b, assets, x + 1.35, y, z - side * 0.2, side > 0 ? 0.2 : 2.9, rng);
 }
 
+/** A sloped steel beam in the x-y plane between two points, `depth` across z and `height` deep. */
+function stringer(b: Batch, x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, height: number, color: number): void {
+  b.part();
+  b.quad([x0, y0, z1], [x1, y1, z1], [x1, y1 - height, z1], [x0, y0 - height, z1], color, [0, 0, 1]);
+  b.quad([x0, y0, z0], [x1, y1, z0], [x1, y1 - height, z0], [x0, y0 - height, z0], color, [0, 0, -1]);
+  b.quad([x0, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y0, z1], color, [0, 1, 0]);
+  b.quad([x0, y0 - height, z0], [x1, y1 - height, z0], [x1, y1 - height, z1], [x0, y0 - height, z1], color, [0, -1, 0]);
+}
+
+const BRIDGE_DECK_Y = 6.6;
+/** The outer band of the pavement, where a bridge's stair comes down. */
+export const STAIR_INNER = SIDEWALK_HALF - 1.85;
+
 /**
- * A foot-over-bridge across the main road: stairs at each end, a caged deck, and people crossing.
- * The sheer number of them was the reference video's other visual idea, here in Dhaka's own steel.
+ * A foot-over-bridge across the main road, midway between two piers: a caged steel deck on
+ * columns at both kerbs and the median, and at each end a stair that comes down along the
+ * outer edge of the pavement, as Dhaka's bridges do, so it lands on the footpath and not in
+ * a shop. `stairs` gives the direction, in local x, each stair runs: near side, then far side.
  */
-export function footBridge(b: Batch, assets: Assets, x: number, rng: Rng): void {
-  const deckY = 6.6;
-  const halfZ = SIDEWALK_HALF - 2.4;
-  const width = 2.6;
+export function footBridge(b: Batch, assets: Assets, x: number, stairs: readonly [number, number], rng: Rng): void {
+  const deckY = BRIDGE_DECK_Y;
+  const halfZ = SIDEWALK_HALF - 0.1;
+  const half = BRIDGE_HALF;
   const steel = 0x6e8088;
   const paint = 0x3f7f6e;
-  const x0 = x - width / 2;
-  const x1 = x + width / 2;
-  // Deck.
+  const tread = 0xbdb6a6;
+  const x0 = x - half;
+  const x1 = x + half;
+  const roofed = rng.chance(0.45);
   b.part();
-  b.box(x0, deckY - 0.4, -halfZ, x1, deckY, halfZ, paint);
+  b.box(x0, deckY - 0.45, -halfZ, x1, deckY, halfZ, paint);
   b.part();
-  b.box(x0 + 0.04, deckY, -halfZ, x1 - 0.04, deckY + 0.02, halfZ, 0xbdb6a6);
-  // Side trusses with their mesh, on the visible near (-x) side and its far twin.
+  b.box(x0 + 0.05, deckY, -halfZ, x1 - 0.05, deckY + 0.03, halfZ, tread);
+  // Side trusses: top chord, posts, diagonals and the wire mesh between them.
   for (const u of [x0, x1]) {
     b.part();
-    b.box(u - 0.04, deckY + 1.15, -halfZ, u + 0.04, deckY + 1.23, halfZ, steel);
-    for (let z = -halfZ; z <= halfZ; z += 1.6) {
+    b.box(u - 0.05, deckY + 1.18, -halfZ, u + 0.05, deckY + 1.28, halfZ, steel);
+    b.box(u - 0.03, deckY + 0.55, -halfZ, u + 0.03, deckY + 0.6, halfZ, steel);
+    for (let z = -halfZ; z <= halfZ + 0.01; z += 1.75) {
       b.part();
-      b.bar([u, deckY, z], [u, deckY + 1.2, z], 0.03, 0.03, steel, 4);
-      if (z + 1.6 <= halfZ) b.bar([u, deckY, z], [u, deckY + 1.2, z + 1.6], 0.015, 0.015, steel, 3);
+      b.box(u - 0.04, deckY, z - 0.04, u + 0.04, deckY + 1.24, z + 0.04, steel);
+      if (z + 1.75 <= halfZ) b.bar([u, deckY + 0.05, z], [u, deckY + 1.2, z + 1.75], 0.018, 0.018, steel, 3);
     }
   }
-  // Support legs each side of the road.
-  for (const z of [-ROAD_HALF - 0.6, ROAD_HALF + 0.6]) {
-    b.part();
-    b.block(x, 0.2, z, 1.1, 0.2, 1.1, 0xb7b1a2);
-    b.part();
-    b.bar([x, 0.4, z], [x, deckY - 0.4, z], 0.17, 0.15, steel, 8);
-  }
-  // Stairs running along the pavement on both ends.
-  for (const side of [-1, 1]) {
-    const startZ = side * halfZ;
-    const run = 8;
-    for (let i = 0; i < 16; i++) {
-      const t = i / 16;
-      const y = deckY - t * (deckY - 0.2);
-      const zA = startZ + (side * (i * run)) / 16;
-      const zB = startZ + (side * ((i + 1) * run)) / 16;
+  if (roofed) {
+    // A curved sheet roof on hoops, which the busier bridges have.
+    for (let z = -halfZ; z <= halfZ + 0.01; z += 3.5) {
       b.part();
-      b.box(x0, y - 0.2, Math.min(zA, zB), x1, y, Math.max(zA, zB), i % 2 ? 0xbdb6a6 : 0xb0a998);
+      b.bar([x0, deckY + 1.25, z], [x0, deckY + 2.5, z], 0.03, 0.03, steel, 4);
+      b.bar([x1, deckY + 1.25, z], [x1, deckY + 2.5, z], 0.03, 0.03, steel, 4);
     }
     b.part();
-    b.bar([x0, deckY + 1.1, startZ], [x0, 1.3, startZ + side * run], 0.03, 0.03, steel, 4);
-    b.bar([x1, deckY + 1.1, startZ], [x1, 1.3, startZ + side * run], 0.03, 0.03, steel, 4);
+    const arc = 6;
+    for (let i = 0; i < arc; i++) {
+      const a0 = (i / arc) * Math.PI;
+      const a1 = ((i + 1) / arc) * Math.PI;
+      const p = (a: number): [number, number] => [x - Math.cos(a) * (half + 0.15), deckY + 2.5 + Math.sin(a) * 0.55];
+      const [ax, ay] = p(a0);
+      const [bx, by] = p(a1);
+      b.quad([ax, ay, halfZ + 0.2], [bx, by, halfZ + 0.2], [bx, by, -halfZ - 0.2], [ax, ay, -halfZ - 0.2], i % 2 ? city.tin : 0xa9aea9, [0, 1, 0]);
+    }
   }
-  // A banner across the deck, as every footbridge in the city carries.
+  // Columns: a pair at each kerb and a single one on the median, each on its footing.
+  for (const z of [-ROAD_HALF - 0.45, ROAD_HALF + 0.45]) {
+    for (const u of [x0 + 0.25, x1 - 0.25]) {
+      b.part();
+      b.block(u, 0.2, z, 0.55, 0.18, 0.55, 0xb7b1a2);
+      b.part();
+      b.box(u - 0.14, 0.38, z - 0.14, u + 0.14, deckY - 0.45, z + 0.14, steel);
+    }
+    b.part();
+    b.box(x0 + 0.1, deckY - 1.05, z - 0.12, x1 - 0.1, deckY - 0.45, z + 0.12, steel);
+  }
   b.part();
-  b.box(x0 - 0.04, deckY + 0.2, -5, x0, deckY + 1.05, 5, 0xf4f1e7);
+  b.block(x, 0.26, 0, 0.8, 0.2, 0.8, 0xb7b1a2);
   b.part();
-  b.quad([x0 - 0.05, deckY + 0.24, 4.9], [x0 - 0.05, deckY + 0.24, -4.9], [x0 - 0.05, deckY + 1.01, -4.9], [x0 - 0.05, deckY + 1.01, 4.9], 0xffffff, [-1, 0, 0], posterUv(rng.int(0, 5)));
+  b.bar([x, 0.46, 0], [x, deckY - 0.45, 0], 0.22, 0.2, steel, 8);
+  b.part();
+  b.box(x0 + 0.1, deckY - 1.05, -0.15, x1 - 0.1, deckY - 0.45, 0.15, steel);
+
+  // Stairs down along the pavement: two flights with a landing between them.
+  const flight = (STAIR_RUN - 1.6) / 2;
+  const steps = 19;
+  for (const [index, side] of [[0, 1], [1, -1]] as const) {
+    const direction = stairs[index]!;
+    const zIn = side * STAIR_INNER;
+    const zOut = side * (SIDEWALK_HALF - 0.1);
+    const z0 = Math.min(zIn, zOut);
+    const z1 = Math.max(zIn, zOut);
+    const startX = direction > 0 ? x1 : x0;
+    const mid = deckY / 2;
+    const runs: Array<[number, number, number, number]> = [
+      [startX, deckY, startX + direction * flight, mid],
+      [startX + direction * (flight + 1.6), mid, startX + direction * (2 * flight + 1.6), 0.2],
+    ];
+    for (const [ax, ay, bx, by] of runs) {
+      for (let i = 0; i < steps; i++) {
+        const t = i / steps;
+        const u0 = ax + (bx - ax) * t;
+        const u1 = ax + (bx - ax) * (t + 1 / steps);
+        const y = ay + (by - ay) * (t + 1 / steps);
+        b.part();
+        b.box(Math.min(u0, u1), y - 0.17, z0 + 0.06, Math.max(u0, u1), y, z1 - 0.06, i % 2 ? tread : 0xb0a998);
+      }
+      stringer(b, ax, ay, bx, by, z0, z0 + 0.12, 0.32, paint);
+      stringer(b, ax, ay, bx, by, z1 - 0.12, z1, 0.32, paint);
+      // Handrails on both sides, with their posts.
+      for (const z of [z0 + 0.06, z1 - 0.06]) {
+        b.part();
+        b.bar([ax, ay + 1.0, z], [bx, by + 1.0, z], 0.025, 0.025, steel, 4);
+        for (let i = 0; i <= 4; i++) {
+          const t = i / 4;
+          const px = ax + (bx - ax) * t;
+          const py = ay + (by - ay) * t;
+          b.bar([px, py, z], [px, py + 1.0, z], 0.018, 0.018, steel, 3);
+        }
+      }
+    }
+    // The landing between the flights, on two posts.
+    const landing0 = startX + direction * flight;
+    const landing1 = startX + direction * (flight + 1.6);
+    b.part();
+    b.box(Math.min(landing0, landing1), mid - 0.3, z0, Math.max(landing0, landing1), mid, z1, paint);
+    for (const z of [z0 + 0.15, z1 - 0.15]) {
+      b.part();
+      b.box((landing0 + landing1) / 2 - 0.1, 0.2, z - 0.1, (landing0 + landing1) / 2 + 0.1, mid - 0.3, z + 0.1, steel);
+    }
+    // The deck's end, where the stair begins, on a post of its own.
+    b.part();
+    b.box(startX - 0.12, 0.2, side * (SIDEWALK_HALF - 0.4) - 0.12, startX + 0.12, deckY - 0.45, side * (SIDEWALK_HALF - 0.4) + 0.12, steel);
+  }
+  // A banner along the deck, as every footbridge in the city carries one.
+  b.part();
+  b.box(x0 - 0.05, deckY + 0.2, -5, x0, deckY + 1.08, 5, 0xf4f1e7);
+  b.part();
+  b.quad([x0 - 0.06, deckY + 0.24, 4.9], [x0 - 0.06, deckY + 0.24, -4.9], [x0 - 0.06, deckY + 1.04, -4.9], [x0 - 0.06, deckY + 1.04, 4.9], 0xffffff, [-1, 0, 0], posterUv(rng.int(0, 5)));
   const crossers = rng.int(2, 6);
   for (let i = 0; i < crossers; i++) {
-    bystander(b, assets, x + rng.range(-0.6, 0.6), deckY + 0.02, rng.range(-halfZ + 1, halfZ - 1), rng.chance(0.5) ? 0 : Math.PI, rng);
+    bystander(b, assets, x + rng.range(-0.6, 0.6), deckY + 0.03, rng.range(-halfZ + 1, halfZ - 1), rng.chance(0.5) ? 0 : Math.PI, rng);
   }
 }
