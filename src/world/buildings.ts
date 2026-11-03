@@ -1,7 +1,9 @@
+import type { Assets } from "../assets";
 import { Surface, type Batch } from "../geometry";
 import type { Rng } from "../shared/rng";
-import { awnings, city, shutters, stucco } from "../shared/palette";
-import { SHOP_NAMES, billboardUv, shopUv } from "../signs/regions";
+import { city, stucco } from "../shared/palette";
+import { billboardUv } from "../signs/regions";
+import { chooseTenants, groundShops, upperShops, type Frontage } from "./shopfront";
 
 export interface Plot {
   x0: number;
@@ -13,6 +15,20 @@ export interface Plot {
   maxHeight: number;
   /** Whether the +Z face looks onto the main road. */
   streetFront: boolean;
+  /** Whether the -X face looks onto a side street. */
+  sideFront: boolean;
+  assets: Assets;
+}
+
+/** Draws a street-facing storey or two of shops. Returns how many floors of flats they replaced. */
+function shopfronts(b: Batch, plot: Plot, width: number, height: number, floors: number, trim: number, rng: Rng): number {
+  const f: Frontage = { width, height, trim, lod: plot.lod, assets: plot.assets, rng };
+  // A commercial block lets its first floor too, and needs two storeys of front for it.
+  const tenants = floors >= 2 && rng.chance(0.72) ? chooseTenants(width, rng) : [];
+  groundShops(b, f, tenants);
+  if (!tenants.length) return 0;
+  upperShops(b, f, height, FLOOR, tenants);
+  return 1;
 }
 
 const FLOOR = 3.1;
@@ -167,57 +183,6 @@ function drawFacade(b: Batch, width: number, floors: number, baseY: number, styl
         const w = bay - margin * 2;
         const panes = kind === "wide" ? (w > 2.6 ? 4 : 3) : 2;
         drawWindow(b, u + margin, y + 0.95, w, 1.55, style, lod, panes, rng);
-      }
-    }
-  }
-}
-
-/** One row of shopfronts: shutter, awning and a signboard, with a share of them open. */
-function drawShops(b: Batch, width: number, height: number, style: Style, lod: number, rng: Rng): void {
-  const count = Math.max(1, Math.round(width / rng.range(3.4, 5)));
-  const bay = width / count;
-  if (lod >= 2) return;
-  b.part();
-  b.box(0, height - 0.22, 0, width, height, 0.26, style.trim);
-  for (let i = 0; i < count; i++) {
-    const u = i * bay;
-    const w = bay - 0.24;
-    const open = rng.chance(0.55);
-    b.part();
-    if (open) {
-      b.panel(u + 0.12, 0.05, u + 0.12 + w, height - 1.1, 0.02, 0x4a4f50);
-      if (lod === 0) {
-        // Shelves of goods behind an open shutter.
-        for (let shelf = 0; shelf < 3; shelf++) {
-          const shelfY = 0.5 + shelf * 0.62;
-          b.part();
-          b.box(u + 0.2, shelfY, 0.02, u + w, shelfY + 0.05, 0.25, 0x8c7a61);
-          for (let item = u + 0.26; item < u + w - 0.12; item += rng.range(0.14, 0.3)) {
-            b.box(item, shelfY + 0.05, 0.05, item + 0.11, shelfY + rng.range(0.16, 0.36), 0.19, rng.pick(awnings));
-          }
-        }
-      }
-    } else {
-      const shutter = rng.pick(shutters);
-      b.panel(u + 0.12, 0.05, u + 0.12 + w, height - 1.1, 0.02, shutter);
-      if (lod === 0) {
-        for (let y = 0.2; y < height - 1.2; y += 0.14) {
-          b.box(u + 0.12, y, 0.02, u + 0.12 + w, y + 0.025, 0.03, 0x000000 + ((shutter >> 1) & 0x7f7f7f));
-        }
-      }
-    }
-    // Signboard above the shutter.
-    b.part();
-    const sign = rng.pick(awnings);
-    b.box(u + 0.08, height - 1.05, 0.02, u + w + 0.16, height - 0.38, 0.14, sign);
-    if (lod === 0) {
-      b.part();
-      b.panel(u + 0.1, height - 1.03, u + w + 0.14, height - 0.4, 0.142, 0xffffff, shopUv(rng.int(0, SHOP_NAMES.length - 1)));
-      // Tin awning shading the pavement.
-      if (rng.chance(0.55)) {
-        b.part();
-        const tin = rng.chance(0.5) ? city.tin : rng.pick(awnings);
-        b.quad([u + 0.1, height - 1.15, 0.1], [u + w + 0.14, height - 1.15, 0.1], [u + w + 0.14, height - 1.5, 1.25], [u + 0.1, height - 1.5, 1.25], tin, [0, 1, 0.2]);
       }
     }
   }
@@ -458,17 +423,18 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
   b.as(Surface.roof, () => b.box(x0 + 0.14, height - 0.01, z0 + 0.14, x1 - 0.14, height + 0.03, z1 - 0.14, rng.pick([0xe9e5da, 0xe2ddcf, 0xeeeade, 0xdedad0])));
 
   b.at(x0, 0, z1, () => {
-    drawFacade(b, width, floors, groundH, style, lod, rng);
-    if (plot.streetFront) drawShops(b, width, groundH, style, lod, rng);
-    else if (lod <= 1) {
+    const taken = plot.streetFront ? shopfronts(b, plot, width, groundH, floors, style.trim, rng) : 0;
+    drawFacade(b, width, floors - taken, groundH + taken * FLOOR, style, lod, rng);
+    if (!plot.streetFront && lod <= 1) {
       b.part();
       b.box(0, groundH - 0.14, 0, width, groundH, 0.1, style.trim);
     }
   });
   b.at(x0, 0, z0, () => {
-    drawFacade(b, depth, floors, groundH, style, lod, rng);
+    const taken = plot.sideFront ? shopfronts(b, plot, depth, groundH, floors, style.trim, rng) : 0;
+    drawFacade(b, depth, floors - taken, groundH + taken * FLOOR, style, lod, rng);
     if (lod === 0 && rng.chance(0.6)) wallRisers(b, depth, height, rng);
-    if (lod <= 1) {
+    if (!plot.sideFront && lod <= 1) {
       b.part();
       b.box(0, groundH - 0.14, 0, depth, groundH, 0.1, style.trim);
       b.part();
@@ -518,8 +484,15 @@ export function stackedBlock(b: Batch, plot: Plot, rng: Rng): void {
     b.part();
     b.as(Surface.plaster, () => b.box(ax0, y, az0, ax1, y + h, az1, tier % 2 === 0 ? style.wall : pale));
     const floors = Math.round(h / 3.1);
-    b.at(ax0, y, az1, () => drawFacade(b, ax1 - ax0, floors, 0, style, lod, rng));
-    b.at(ax0, y, az0, () => drawFacade(b, az1 - az0, floors, 0, style, lod, rng), FACE_X);
+    b.at(ax0, y, az1, () => {
+      // The podium is where a stacked block keeps its shops, reaching the street on a shallower step.
+      const taken = tier === 0 && plot.streetFront ? shopfronts(b, plot, ax1 - ax0, 3.1, floors, style.trim, rng) + 1 : 0;
+      drawFacade(b, ax1 - ax0, floors - taken, taken * 3.1, style, lod, rng);
+    });
+    b.at(ax0, y, az0, () => {
+      const taken = tier === 0 && plot.sideFront ? shopfronts(b, plot, az1 - az0, 3.1, floors, style.trim, rng) + 1 : 0;
+      drawFacade(b, az1 - az0, floors - taken, taken * 3.1, style, lod, rng);
+    }, FACE_X);
     y += h;
     // A terrace slab, wider than the storey below, with fins and a glass rail.
     b.part();
@@ -632,10 +605,13 @@ export function brickBlock(b: Batch, plot: Plot, rng: Rng): void {
   b.part();
   b.as(Surface.roof, () => b.box(x0 + 0.1, height - 0.01, z0 + 0.1, x1 - 0.1, height + 0.03, z1 - 0.1, 0xbcb3a3));
   b.at(x0, 0, z1, () => {
-    drawFacade(b, width, floors, groundH, style, lod, rng);
-    if (plot.streetFront) drawShops(b, width, groundH, style, lod, rng);
+    const taken = plot.streetFront ? shopfronts(b, plot, width, groundH, floors, 0xe7e2d5, rng) : 0;
+    drawFacade(b, width, floors - taken, groundH + taken * FLOOR, style, lod, rng);
   });
-  b.at(x0, 0, z0, () => drawFacade(b, depth, floors, groundH, style, lod, rng), FACE_X);
+  b.at(x0, 0, z0, () => {
+    const taken = plot.sideFront ? shopfronts(b, plot, depth, groundH, floors, 0xe7e2d5, rng) : 0;
+    drawFacade(b, depth, floors - taken, groundH + taken * FLOOR, style, lod, rng);
+  }, FACE_X);
   b.as(Surface.brick, () => drawParapet(b, x0, z0, x1, z1, height, 0.7, style.wall, 0xdcd6c8));
   drawRoof(b, x0, z0, x1, z1, height, lod, style, rng);
 }

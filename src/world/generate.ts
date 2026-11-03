@@ -84,6 +84,9 @@ function fillRow(pieces: Pieces, assets: Assets, rng: Rng, x0: number, x1: numbe
       lod: lodAt((z0 + z1) / 2),
       maxHeight: heightLimit(z0),
       streetFront,
+      // Whatever stands just past a side street, with its flank to the camera, trades on that street.
+      sideFront: gaps.some(([, end]) => Math.abs(cursor - (end + 0.4)) < 0.01),
+      assets,
     };
     const distance = Math.abs((z0 + z1) / 2);
     const roll = rng.next();
@@ -163,26 +166,23 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;
-  const rowFront = (from: number, to: number, first: boolean): void => {
-    fillRow(pieces, assets, rng, xMin, 0, from, to, first, gaps);
-  };
+  // This side of the road only shows its backs: the shops face away from the camera.
   let z = FRONT_ROW;
   let first = true;
   while (z < FAR_FRONT - 12) {
     const depth = rng.range(15, 22);
-    rowFront(z, Math.min(z + depth, FAR_FRONT), first);
+    fillRow(pieces, assets, rng, xMin, 0, z, Math.min(z + depth, FAR_FRONT), false, gaps);
     z += depth + rng.range(4.5, 7);
-    first = false;
   }
+  // Across the road the first row faces the traffic and the camera: its shops are the street.
   z = -SIDEWALK_HALF;
   first = true;
   while (z > FAR_BACK + 12) {
     const depth = rng.range(15, 24);
-    fillRow(pieces, assets, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, false, gaps);
+    fillRow(pieces, assets, rng, xMin, 0, Math.max(z - depth, FAR_BACK), z, first, gaps);
     z -= depth + rng.range(4.5, 7);
     first = false;
   }
-  void first;
 
   const batches = [b, street, ...pieces.all];
   const parts = batches.filter((batch) => batch.triangles > 0).map((batch) => batch.finish());

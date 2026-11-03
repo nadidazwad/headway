@@ -6,7 +6,7 @@ import {
   POSTERS,
   POSTER_CELL,
   SHOP_CELL,
-  SHOP_NAMES,
+  SHOP_SIGNS,
   billboardCell,
   posterCell,
   shopCell,
@@ -24,22 +24,34 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, weight: number, fa
   }
 }
 
+/** The boards of a Dhaka street, in the city's greys: every scheme still reads when it is small. */
+const BOARDS = [
+  ["#17181a", "#ffffff"],
+  ["#f6f5ee", "#121315"],
+  ["#3a3b3e", "#ffffff"],
+  ["#dcdad0", "#17181a"],
+  ["#262729", "#f2f0e6"],
+] as const;
+
 function drawShop(ctx: CanvasRenderingContext2D, index: number): void {
-  const [name, background, ink] = SHOP_NAMES[index]!;
+  const [, name, line] = SHOP_SIGNS[index]!;
   const [x, y] = shopCell(index);
   const { w, h } = SHOP_CELL;
+  const [background, ink] = BOARDS[(index * 7 + (index >> 2)) % BOARDS.length]!;
   ctx.fillStyle = background;
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = ink;
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.55;
   ctx.lineWidth = 2;
-  ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+  ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
   ctx.globalAlpha = 1;
   ctx.fillStyle = ink;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  fitText(ctx, name, 700, BANGLA, 46, w - 36);
-  ctx.fillText(name, x + w / 2, y + h / 2 + 2);
+  fitText(ctx, name, 700, BANGLA, 40, w - 30);
+  ctx.fillText(name, x + w / 2, y + 28);
+  fitText(ctx, line, 500, BANGLA, 16, w - 40);
+  ctx.fillText(line, x + w / 2, y + 57);
 }
 
 function drawBillboard(ctx: CanvasRenderingContext2D, index: number): void {
@@ -78,6 +90,7 @@ export async function createAtlas(maxAnisotropy: number): Promise<CanvasTexture>
   await Promise.all([
     document.fonts.load(`700 40px ${BANGLA}`, "ঢাকা মেট্রো"),
     document.fonts.load(`400 20px ${BANGLA}`, "ঢাকা মেট্রো"),
+    document.fonts.load(`500 16px ${BANGLA}`, "ঢাকা মেট্রো"),
     document.fonts.load(`500 40px ${LATIN}`, "METRO"),
     document.fonts.load(`700 40px ${LATIN}`, "M"),
   ]);
@@ -86,7 +99,7 @@ export async function createAtlas(maxAnisotropy: number): Promise<CanvasTexture>
   canvas.height = ATLAS_SIZE;
   const ctx = canvas.getContext("2d")!;
   ctx.clearRect(0, 0, ATLAS_SIZE, ATLAS_SIZE);
-  SHOP_NAMES.forEach((_, index) => drawShop(ctx, index));
+  SHOP_SIGNS.forEach((_, index) => drawShop(ctx, index));
   BILLBOARDS.forEach((_, index) => drawBillboard(ctx, index));
   POSTERS.forEach((_, index) => drawPoster(ctx, index));
   const texture = new CanvasTexture(canvas);

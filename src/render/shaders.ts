@@ -307,7 +307,9 @@ void main() {
   if (uNeutral > 0.5) {
     // The city is one grey drawing: authored colour decides only how light each part is.
     float value = dot(base, vec3(0.3, 0.59, 0.11));
-    value = 0.42 + 0.58 * pow(value, 0.7);
+    // Print keeps its blacks, so a sign still reads; everything else is lifted towards the paper.
+    bool printed = vUv.x > 0.0 || vUv.y > 0.0;
+    value = printed ? 0.2 + 0.8 * value : 0.42 + 0.58 * pow(value, 0.7);
     value *= weathering(vSurface, vLine, n);
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
     float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.12 : 0.36;

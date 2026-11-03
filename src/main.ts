@@ -57,7 +57,7 @@ const rig = createCameraRig({
   azimuth: debugNumber("az") ?? FILM_AZIMUTH,
   elevation: debugNumber("el") ?? FILM_ELEVATION,
   width: debugNumber("w") ?? WIDE_WIDTH(),
-  focus: wideFocus.clone(),
+  focus: debugNumber("fx") !== null ? new Vector3(debugNumber("fx")!, debugNumber("fy") ?? wideFocus.y, debugNumber("fz") ?? 0) : wideFocus.clone(),
 });
 rig.snap();
 
@@ -444,7 +444,7 @@ function updateCameraAim(time: number): void {
   const target = rig.target;
   target.width = debugNumber("w") ?? aim.width;
   const fx = debugNumber("fx");
-  if (fx !== null) target.focus.set(fx, debugNumber("fy") ?? wideFocus.y, 0);
+  if (fx !== null) target.focus.set(fx, debugNumber("fy") ?? wideFocus.y, debugNumber("fz") ?? 0);
   else target.focus.copy(aim.focus);
   // Left alone, the turned camera eases back to where the film holds it.
   if (performance.now() - lastInput > 26000 && !orbit.holding) {
