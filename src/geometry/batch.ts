@@ -8,7 +8,15 @@ export interface MeshData {
   /** Tight bounds of everything drawn, so a piece of city off screen costs nothing. */
   min: Vec3;
   max: Vec3;
+  /** Where the solids end in `indices` and the lines begin. */
+  lineStart: number;
 }
+
+/** A bar thinner than this, or a box thinner than `SLENDER` both ways, is drawn as a line. */
+const LINE_RADIUS = 0.06;
+const SLENDER = 0.07;
+/** Line radii are stored as a fraction of this, in 16 bits. */
+export const LINE_RADIUS_RANGE = 0.25;
 
 export const STRIDE = 24;
 
@@ -124,6 +132,13 @@ export class Batch {
 
   /** Turn off for parts that move, so a face hidden at rest is still there when it turns. */
   cull = true;
+
+  /**
+   * Turn on for the city: anything thinner than a pixel at the wide view shimmers as it slides, so
+   * wires, rods and railings go to the line pass instead of the solid one. See `rod`.
+   */
+  lines = false;
+  private lineIndices: number[] = [];
 
   constructor(initialVertices = 4096) {
     this.buffer = new ArrayBuffer(initialVertices * STRIDE);
@@ -312,12 +327,52 @@ export class Batch {
 
   /** A box between two corners, drawing only the faces the camera can reach. */
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): this {
+    if (this.lines && this.slenderBox(x0, y0, z0, x1, y1, z1, color)) return this;
     this.quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], color, [0, 1, 0]);
     this.quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], color, [0, 0, 1]);
     this.quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], color, [-1, 0, 0]);
     this.quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], color, [1, 0, 0]);
     this.quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], color, [0, 0, -1]);
     this.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], color, [0, -1, 0]);
+    return this;
+  }
+
+  /** Draws a box as a line if it is one: long, and thin both ways across. */
+  private slenderBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: number): boolean {
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0), dz = Math.abs(z1 - z0);
+    const longest = Math.max(dx, dy, dz);
+    const across = dx + dy + dz - longest;
+    const wider = Math.max(Math.min(dx, dy), Math.min(dy, dz), Math.min(dx, dz));
+    if (wider >= SLENDER || longest < wider * 3) return false;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, mz = (z0 + z1) / 2;
+    const r = across / 4;
+    if (longest === dx) this.rod([x0, my, mz], [x1, my, mz], r, r, color);
+    else if (longest === dy) this.rod([mx, y0, mz], [mx, y1, mz], r, r, color);
+    else this.rod([mx, my, z0], [mx, my, z1], r, r, color);
+    return true;
+  }
+
+  /**
+   * A thin straight part, as a ribbon the line pass turns to face the camera: never narrower than
+   * about a pixel, with a real soft edge, and paler in proportion when it is truly thinner.
+   */
+  rod(a: Vec3, b: Vec3, r0: number, r1: number, color: number): this {
+    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-5) return this;
+    const tx = dx / length, ty = dy / length, tz = dz / length;
+    this.growVertices(4);
+    const before = this.surfaceId;
+    const corner = (p: Vec3, r: number, end: number, side: number): number => {
+      this.surfaceId = end as SurfaceKind;
+      return this.vertex(p[0], p[1], p[2], tx, ty, tz, color, Math.min(1, r / LINE_RADIUS_RANGE), side);
+    };
+    const i0 = corner(a, r0, 0, 0);
+    const i1 = corner(a, r0, 0, 1);
+    const i2 = corner(b, r1, 1, 1);
+    const i3 = corner(b, r1, 1, 0);
+    this.surfaceId = before;
+    this.lineIndices.push(i0, i1, i2, i0, i2, i3);
     return this;
   }
 
@@ -474,6 +529,7 @@ export class Batch {
 
   /** A round bar or tapered limb between two points. */
   bar(a: Vec3, b: Vec3, r0: number, r1: number, color: number, sides = 6): this {
+    if (this.lines && Math.max(r0, r1) < LINE_RADIUS) return this.rod(a, b, r0, r1, color);
     const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
     const length = Math.hypot(dx, dy, dz);
     if (length < 1e-5) return this;
@@ -554,13 +610,21 @@ export class Batch {
   }
 
   get triangles(): number {
-    return this.indexCount / 3;
+    return (this.indexCount + this.lineIndices.length) / 3;
+  }
+
+  private finishedIndices(): Uint32Array<ArrayBuffer> {
+    const out = new Uint32Array(this.indexCount + this.lineIndices.length);
+    out.set(this.indices.subarray(0, this.indexCount));
+    out.set(this.lineIndices, this.indexCount);
+    return out;
   }
 
   finish(): MeshData {
     return {
       vertices: this.buffer.slice(0, this.vertexCount * STRIDE),
-      indices: this.indices.slice(0, this.indexCount),
+      indices: this.finishedIndices(),
+      lineStart: this.indexCount,
       min: [this.lo[0], this.lo[1], this.lo[2]],
       max: [this.hi[0], this.hi[1], this.hi[2]],
     };

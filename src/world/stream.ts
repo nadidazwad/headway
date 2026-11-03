@@ -1,10 +1,12 @@
 import { Box3, Frustum, Group, Matrix4, Mesh, Vector3, type Camera, type ShaderMaterial } from "three";
-import { toBufferGeometry } from "../render";
+import { toBufferGeometry, toLineGeometry } from "../render";
 import type { ChunkData } from "./generate";
 import { CHUNK_LENGTH } from "./layout";
 
 export interface World {
   group: Group;
+  /** The city's thin parts, for the line pass. They move and hide with their solids. */
+  lines: Group;
   /** Keeps chunks in view around the train. Chunks build in workers and appear when ready. */
   update(distance: number, ahead: number, behind: number): void;
   /** Hides every piece of city outside the camera's view. Call after the camera has moved. */
@@ -19,12 +21,14 @@ export interface World {
 
 interface LoadedPart {
   mesh: Mesh;
+  line: Mesh | null;
   box: Box3;
   triangles: number;
 }
 
 interface LoadedChunk {
   group: Group;
+  lines: Group;
   parts: LoadedPart[];
   triangles: number;
 }
@@ -35,8 +39,9 @@ const shifted = new Box3();
 const offset = new Vector3();
 
 /** Streams the endless city past a train that stays at the origin, so precision never decays. */
-export function createWorld(material: ShaderMaterial, seed: number): World {
+export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMaterial, seed: number): World {
   const group = new Group();
+  const lines = new Group();
   const meshes = new Map<number, LoadedChunk>();
   const requested = new Set<number>();
   const waiters: Array<() => void> = [];
@@ -73,6 +78,7 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
     requested.delete(chunk.index);
     if (!needed.has(chunk.index)) return;
     const chunkGroup = new Group();
+    const chunkLines = new Group();
     const parts: LoadedPart[] = chunk.parts.map((part) => {
       const geometry = toBufferGeometry(part);
       geometry.boundingBox = new Box3(new Vector3(...part.min), new Vector3(...part.max));
@@ -80,10 +86,17 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
       // Culling happens against tight boxes in cull(), not three's bounding spheres.
       mesh.frustumCulled = false;
       chunkGroup.add(mesh);
-      return { mesh, box: new Box3(new Vector3(...part.min), new Vector3(...part.max)), triangles: part.indices.length / 3 };
+      const lineGeometry = toLineGeometry(geometry, part);
+      const line = lineGeometry ? new Mesh(lineGeometry, lineMaterial) : null;
+      if (line) {
+        line.frustumCulled = false;
+        chunkLines.add(line);
+      }
+      return { mesh, line, box: new Box3(new Vector3(...part.min), new Vector3(...part.max)), triangles: part.indices.length / 3 };
     });
-    meshes.set(chunk.index, { group: chunkGroup, parts, triangles: chunk.triangles });
+    meshes.set(chunk.index, { group: chunkGroup, lines: chunkLines, parts, triangles: chunk.triangles });
     group.add(chunkGroup);
+    lines.add(chunkLines);
     triangles += chunk.triangles;
   };
 
@@ -95,6 +108,7 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
 
   return {
     group,
+    lines,
     update(distance, ahead, behind) {
       currentDistance = distance;
       const first = Math.floor((distance - behind) / CHUNK_LENGTH);
@@ -110,7 +124,11 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
       for (const [index, chunk] of meshes) {
         if (needed.has(index)) continue;
         group.remove(chunk.group);
-        for (const part of chunk.parts) part.mesh.geometry.dispose();
+        lines.remove(chunk.lines);
+        for (const part of chunk.parts) {
+          part.mesh.geometry.dispose();
+          part.line?.geometry.dispose();
+        }
         triangles -= chunk.triangles;
         meshes.delete(index);
       }
@@ -126,6 +144,7 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
       if (next) install(next);
       for (const [index, chunk] of meshes) {
         chunk.group.position.x = distance - index * CHUNK_LENGTH;
+        chunk.lines.position.x = chunk.group.position.x;
       }
       if (pending() === 0) for (const resolve of waiters.splice(0)) resolve();
     },
@@ -138,6 +157,7 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
         for (const part of chunk.parts) {
           shifted.copy(part.box).translate(offset);
           part.mesh.visible = frustum.intersectsBox(shifted);
+          if (part.line) part.line.visible = part.mesh.visible;
           if (part.mesh.visible) drawn += part.triangles;
         }
       }

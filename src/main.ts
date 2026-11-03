@@ -21,8 +21,9 @@ const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
 const pipeline = createPipeline(canvas);
 const scene = new Scene();
-const world = createWorld(pipeline.solid, seed);
+const world = createWorld(pipeline.solid, pipeline.lineMaterial, seed);
 scene.add(world.group);
+pipeline.lineScene.add(world.lines);
 const train = createTrain(pipeline);
 scene.add(train.group);
 const assets = await loadAssets();
@@ -575,6 +576,8 @@ if (debug) {
       rig,
       pipeline,
       train,
+      traffic,
+      opposing,
       seed,
       focusOn,
       targets,

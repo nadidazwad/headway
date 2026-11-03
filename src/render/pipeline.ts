@@ -1,6 +1,7 @@
 import {
   Color,
   ColorManagement,
+  DoubleSide,
   FloatType,
   GLSL3,
   HalfFloatType,
@@ -19,7 +20,7 @@ import {
   WebGLRenderTarget,
   WebGLRenderer,
 } from "three";
-import { compositeFragment, fullscreenVertex, solidFragment, solidVertex } from "./shaders";
+import { compositeFragment, fullscreenVertex, lineFragment, lineVertex, solidFragment, solidVertex } from "./shaders";
 import { createShadows, type ShadowFrame } from "./shadow";
 
 export interface CutPlane {
@@ -36,6 +37,9 @@ export interface Pipeline {
   colored: ShaderMaterial;
   /** A coloured copy whose geometry can be cut away by a moving plane. */
   cuttable(): ShaderMaterial;
+  /** The material for thin parts; whatever is added to `lineScene` is drawn with the ink, after it. */
+  lineMaterial: ShaderMaterial;
+  lineScene: Scene;
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
   setHaze(start: number, end: number): void;
@@ -171,6 +175,23 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uForward: { value: new Vector3() },
     },
   });
+  const lineMaterial = new ShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: lineVertex,
+    fragmentShader: lineFragment,
+    transparent: true,
+    side: DoubleSide,
+    uniforms: {
+      uColor: composite.uniforms.uColor!,
+      uData: composite.uniforms.uData!,
+      uHaze: composite.uniforms.uHaze!,
+      uForward: composite.uniforms.uForward!,
+      uFocusDepth: shared.uFocusDepth,
+      uPixel: { value: 0.04 },
+      uLineWidth: { value: 1.5 },
+    },
+  });
+  const lineScene = new Scene();
   const fullscreenScene = new Scene();
   fullscreenScene.add(new Mesh(new PlaneGeometry(2, 2), composite));
   const fullscreenCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -196,6 +217,8 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     solid,
     colored,
     cuttable,
+    lineMaterial,
+    lineScene,
     setCut(material, cut) {
       if (!cut) {
         material.uniforms.uCutEnabled!.value = 0;
@@ -263,6 +286,11 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       renderer.setRenderTarget(null);
       timer.begin("composite");
       renderer.render(fullscreenScene, fullscreenCamera);
+      timer.end();
+      timer.begin("lines");
+      lineMaterial.uniforms.uPixel!.value = (camera.right - camera.left) / target.width;
+      renderer.clearDepth();
+      renderer.render(lineScene, camera);
       timer.end();
       timer.collect(stats.gpu);
     },

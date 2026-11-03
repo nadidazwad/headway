@@ -28,6 +28,7 @@ class Pieces {
     let batch = this.cells.get(key);
     if (!batch) {
       batch = new Batch(1 << 12);
+      batch.lines = true;
       this.cells.set(key, batch);
     }
     return batch;
@@ -119,6 +120,8 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
   const rng = new Rng(hashSeed(seed, index));
   const b = new Batch(1 << 15);
   const street = new Batch(1 << 15);
+  b.lines = true;
+  street.lines = true;
   const pieces = new Pieces();
 
   const plan = chunkPlan(seed, index);

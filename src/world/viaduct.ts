@@ -160,7 +160,7 @@ function trackRun(b: Batch, x0: number, x1: number, z: number, context: Context)
 function overhead(b: Batch, context: Context): void {
   const MAST = SPAN * 2;
   const steel = 0x8b9396;
-  const dark = 0x7a7e80;
+  const dark = 0x4f5356;
   const wireTop = RAIL_Y + 6.3;
   const contact = RAIL_Y + 5.25;
   for (const distance of latticeIn(context, MAST)) {

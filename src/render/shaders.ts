@@ -1,3 +1,4 @@
+import { LINE_RADIUS_RANGE } from "../geometry";
 
 /**
  * Weathering for the grey city: each surface kind gets the marks that make it read as real in
@@ -318,6 +319,87 @@ void main() {
   outColor = vec4(lit, 1.0);
   vec3 nv = normalize(vNormalView);
   outData = vec4(nv.xy, vDepth, vPart + 0.002);
+}
+`;
+
+/**
+ * Thin parts, drawn after the ink as ribbons that face the camera. The soft edge is computed, not
+ * sampled, so a line keeps its exact weight however it falls between pixels.
+ */
+export const lineVertex = /* glsl */ `
+in vec4 colorPart;
+in float surface;
+uniform float uFocusDepth;
+uniform float uPixel;
+uniform float uLineWidth;
+uniform vec3 uForward;
+out vec3 vColor;
+out float vWorldZ;
+out float vDepth;
+out float vSide;
+out float vHalf;
+out float vDensity;
+
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vec3 axis = normalize(mat3(modelMatrix) * normal);
+  vec3 across = cross(axis, uForward);
+  float len = length(across);
+  across = len > 0.001 ? across / len : normalize(cross(vec3(0.0, 1.0, 0.0), uForward));
+  float radius = uv.x * LINE_RADIUS_RANGE;
+  float wanted = 0.5 * uLineWidth * uPixel;
+  float halfWidth = max(radius, wanted);
+  float side = uv.y * 2.0 - 1.0;
+  float reach = halfWidth + uPixel;
+  world.xyz += across * side * reach + axis * (surface * 2.0 - 1.0) * uPixel * 0.5;
+  vec4 view = viewMatrix * world;
+  vColor = colorPart.rgb;
+  vWorldZ = world.z;
+  vDepth = -view.z - uFocusDepth;
+  vSide = side * reach / uPixel;
+  vHalf = halfWidth / uPixel;
+  vDensity = clamp(radius / wanted, 0.0, 1.0);
+  gl_Position = projectionMatrix * view;
+}
+`.replace("LINE_RADIUS_RANGE", LINE_RADIUS_RANGE.toFixed(4));
+
+export const lineFragment = /* glsl */ `
+precision highp float;
+in vec3 vColor;
+in float vWorldZ;
+in float vDepth;
+in float vSide;
+in float vHalf;
+in float vDensity;
+uniform sampler2D uColor;
+uniform sampler2D uData;
+uniform vec2 uHaze;
+layout(location = 0) out vec4 outColor;
+
+void main() {
+  // The solid pass's depth is the depth test: lines never wrote to it, so they pass behind solids properly.
+  ivec2 pixel = ivec2(gl_FragCoord.xy);
+  float cover = texelFetch(uColor, pixel, 0).a;
+  if (cover > 0.02) {
+    float scene = texelFetch(uData, pixel, 0).z / cover;
+    if (vDepth > scene + 0.05 + abs(scene) * 0.002) discard;
+  }
+  float d = abs(vSide);
+  float edge = clamp(vHalf - d + 0.5, 0.0, 1.0);
+  float value = dot(vColor, vec3(0.3, 0.59, 0.11));
+  value = 0.42 + 0.58 * pow(value, 0.7);
+  // At a pixel wide a line is ink. Wide enough to see round, it shades like a rod with its own outline.
+  float resolved = smoothstep(1.2, 3.0, vHalf);
+  float t = d / max(vHalf, 0.001);
+  float round = mix(0.56, 1.02 - 0.3 * t * t, resolved);
+  float outline = resolved * smoothstep(vHalf - 1.4, vHalf - 0.4, d);
+  vec3 colour = vec3(0.985, 0.992, 0.965) * value * round * (1.0 - 0.5 * outline);
+  float behind = smoothstep(uHaze.x, uHaze.y, -vWorldZ);
+  behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
+  float far = max(smoothstep(92.0, 124.0, vWorldZ), smoothstep(128.0, 170.0, -vWorldZ));
+  float alpha = edge * mix(0.42, 1.0, vDensity) * (1.0 - max(min(behind, 0.965), far));
+  if (alpha < 0.004) discard;
+  outColor = vec4(colour, alpha);
 }
 `;
 
