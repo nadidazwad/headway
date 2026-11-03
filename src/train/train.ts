@@ -5,8 +5,8 @@ import { RAIL_Y, TRACK_Z } from "../world/layout";
 import { AXLE_OFFSET, BOGIE_OFFSET, WHEEL_RADIUS, WHEEL_Z, buildCar, buildWheel } from "./geometry";
 import { CAR_LENGTH, CAR_PITCH, FLOOR_Y, HALF_WIDTH, ROOF_Y } from "./layout";
 
-/** Six cars, each what is on Dhaka's mind. The first is the one Line 6 reserves for women. */
-export const CAR_THEMES: readonly Theme[] = ["women", "jam", "bazar", "kaj", "bari", "gorom"];
+/** Six cars, each a way of riding. The first is the one Line 6 reserves for women. */
+export const CAR_THEMES: readonly Theme[] = ["women", "crush", "seat", "sleep", "late", "first"];
 
 export interface TrainCar {
   index: number;

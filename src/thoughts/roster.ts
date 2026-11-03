@@ -1,7 +1,7 @@
 import type { Assets, Outfit, PersonPose } from "../assets";
 import { Rng, hashSeed } from "../shared/rng";
 import { BENCHES, DOOR_CENTERS, INSIDE_HALF, NOSE_AT, STRAP_RAIL_Z, STRAP_STEP, WHEELCHAIR_BAY, seatCentres } from "../train/layout";
-import { NAMES_F, NAMES_M, thoughtsOf, type Thought, type Theme } from "./corpus";
+import { NAMES_F, NAMES_M, thoughtsOf, type Fits, type Thought, type Theme } from "./corpus";
 
 export interface Passenger {
   id: string;
@@ -62,8 +62,8 @@ export function rosterFor(assets: Assets, seed: number, carIndex: number, theme:
   const womenOnly = theme === "women";
   const count = rng.int(9, 13);
   const places = placesInCar(rng, count).filter((place) => place.x > xMin && place.x < xMax);
-  // Each person draws from what their own sex said, and no two in a coach think the same thing.
-  const thoughts = { women: rng.shuffled(thoughtsOf(theme, true)), men: rng.shuffled(thoughtsOf(theme, false)) };
+  // No two people in a coach think the same thing.
+  const thinking = new Set<string>();
   const speakers = Math.min(places.length, rng.int(3, 5));
   const order = rng.shuffled(places.map((_, i) => i));
   // Prefer people whose faces the camera can see: the far bench and those standing.
@@ -114,37 +114,54 @@ export function rosterFor(assets: Assets, seed: number, carIndex: number, theme:
       x: place.x,
       z: place.z,
       facing: place.facing,
-      thought: speaking.has(index) ? (female ? thoughts.women : thoughts.men)[index % (female ? thoughts.women : thoughts.men).length]! : null,
+      thought: speaking.has(index) ? freshThought(theme, female, pose, thinking, rng) : null,
       headTop: assets.top(avatar, pose === "strap" ? "stand" : pose),
     };
   });
 }
 
-/** The next thing on this passenger's mind, so a coach you return to has moved on. */
-export function nextThought(theme: Theme | "cab", female: boolean, previous: Thought | null, rng: Rng): Thought {
-  const pool = thoughtsOf(theme, female);
-  let thought = rng.pick(pool);
-  for (let tries = 0; tries < 4 && thought === previous; tries++) thought = rng.pick(pool);
+const SEATED: ReadonlySet<PersonPose> = new Set(["sit", "sitrest", "sitphone"]);
+const FITS: Record<Fits, (pose: PersonPose) => boolean> = {
+  any: () => true,
+  seated: (pose) => SEATED.has(pose),
+  standing: (pose) => !SEATED.has(pose),
+  strap: (pose) => pose === "strap",
+  phone: (pose) => pose === "phone" || pose === "sitphone",
+  music: (pose) => pose === "music",
+  nomusic: (pose) => pose !== "music",
+};
+
+/** What could cross this person's mind: their own sex's lines, for the way they are riding. */
+const possible = (theme: Theme | "cab", female: boolean, pose: PersonPose): Thought[] =>
+  thoughtsOf(theme, female).filter((thought) => FITS[thought.fits](pose));
+
+function freshThought(theme: Theme | "cab", female: boolean, pose: PersonPose, taken: Set<string>, rng: Rng): Thought {
+  const options = possible(theme, female, pose);
+  const fresh = options.filter((thought) => !taken.has(thought.bn));
+  const thought = rng.pick(fresh.length ? fresh : options);
+  taken.add(thought.bn);
   return thought;
 }
 
-/**
- * The operator is a woman because the only operators we found speaking in print are: Line 6's first
- * train was driven by one. They go unnamed, so the words are not pinned on a person they never met.
- */
+/** The next thing on this passenger's mind, so a coach you return to has moved on. */
+export function nextThought(theme: Theme | "cab", person: Pick<Passenger, "female" | "pose" | "thought">, rng: Rng): Thought {
+  return freshThought(theme, person.female, person.pose, new Set(person.thought ? [person.thought.bn] : []), rng);
+}
+
+/** Line 6 has women and men at the controls, so either may be driving this set. */
 export function operatorFor(assets: Assets, seed: number): Passenger {
-  const avatar = Math.max(0, assets.avatars.findIndex((a) => a.outfit === "kurta"));
-  const lines = thoughtsOf("cab", true);
+  const female = seed % 2 === 0;
+  const avatar = Math.max(0, assets.avatars.findIndex((a) => (female ? a.outfit === "kurta" : a.name === "Male_Adult_08")));
   return {
     id: "operator",
     name: { bn: "চালক", en: "OPERATOR" },
-    female: true,
+    female,
     avatar,
     pose: "sit",
     x: -NOSE_AT + 1.32,
     z: -0.28,
     facing: -Math.PI / 2,
-    thought: lines[seed % lines.length]!,
+    thought: freshThought("cab", female, "sit", new Set(), new Rng(hashSeed(seed, 77))),
     headTop: assets.top(avatar, "sit"),
   };
 }
