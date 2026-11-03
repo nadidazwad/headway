@@ -1,5 +1,188 @@
+
+/**
+ * Weathering for the grey city: each surface kind gets the marks that make it read as real in
+ * Dhaka, as a multiplier on its value. Every pattern is pinned to the line and fades out before
+ * its detail shrinks under a pixel, so nothing shimmers as the city slides past.
+ */
+const WEATHERING = /* glsl */ `
+const float WRAP = 1024.0;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+/** Value noise, periodic in x with the given period in cells, so the line's wrap never shows. */
+float vnoise(vec2 p, float period) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float x0 = mod(i.x, period);
+  float x1 = mod(i.x + 1.0, period);
+  float a = hash12(vec2(x0, i.y));
+  float b = hash12(vec2(x1, i.y));
+  float c = hash12(vec2(x0, i.y + 1.0));
+  float d = hash12(vec2(x1, i.y + 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+/** Noise at scale cells a metre over coordinates whose x wraps at WRAP metres. */
+float wnoise(vec2 uv, float scale) {
+  return vnoise(uv * scale, WRAP * scale);
+}
+
+float wfbm(vec2 uv, float scale) {
+  return 0.5 * wnoise(uv, scale) + 0.3 * wnoise(uv + 31.7, scale * 2.0) + 0.2 * wnoise(uv + 71.3, scale * 4.0);
+}
+
+/** 1 for detail of this size in metres when it spans several pixels, 0 once it would alias. */
+float detail(float size, float px) {
+  return 1.0 - smoothstep(size * 0.22, size * 0.55, px);
+}
+
+/** A thin dark joint every step metres along t, width metres wide, faded by pixel size. */
+float joint(float t, float step, float width, float px) {
+  float d = abs(fract(t / step + 0.5) - 0.5) * step;
+  return (1.0 - smoothstep(width * 0.5, width * 0.5 + max(px, 0.004), d)) * detail(step * 0.35, px);
+}
+
+float asphalt(vec2 uv, float px) {
+  float v = 1.0 + (wfbm(uv * vec2(1.0, 1.6), 0.125) - 0.5) * 0.11;
+  // Two wheel paths in every lane, polished darker, and an oil line down the middle.
+  float z = abs(uv.y);
+  float lane = z < 4.9 ? 3.4 : z < 7.9 ? 6.4 : z < 10.75 ? 9.4 : 12.1;
+  float dz = z - lane;
+  float track = exp(-pow((abs(dz) - 0.82) / 0.32, 2.0));
+  v -= track * 0.05 * step(z, 13.4);
+  v -= exp(-pow(dz / 0.2, 2.0)) * 0.08 * wnoise(uv * vec2(1.0, 0.0) + vec2(0.0, lane), 0.5) * step(z, 13.4);
+  // Patches of newer tar where the road was dug up, and older paler ones.
+  vec2 cell = floor(uv / vec2(4.0, 2.4));
+  float h = hash12(vec2(mod(cell.x, WRAP / 4.0), cell.y));
+  vec2 f = fract(uv / vec2(4.0, 2.4));
+  float inside = step(0.12 + h * 0.2, f.x) * step(f.x, 0.75 + h * 0.2) * step(0.15, f.y) * step(f.y, 0.85);
+  v += inside * (h > 0.93 ? -0.075 : h > 0.88 ? 0.035 : 0.0);
+  // Cracks: thin dark lines along the ridges of a noise field, only where the road has aged.
+  float crack = abs(wnoise(uv + wnoise(uv, 2.0) * 0.6, 1.0) - 0.5);
+  float aged = smoothstep(0.6, 0.75, wnoise(uv, 0.18));
+  v -= (1.0 - smoothstep(0.002, 0.006 + px * 0.2, crack)) * 0.08 * aged * detail(0.12, px);
+  v += (wnoise(uv, 16.0) - 0.5) * 0.06 * detail(0.06, px);
+  return v;
+}
+
+float concreteSurface(vec2 uv, float px, float vertical) {
+  float v = 1.0 + (wfbm(uv, 0.5) - 0.5) * 0.09;
+  // Formwork lifts up a pier, and the vertical runs of water from every joint above.
+  v -= joint(uv.y, 1.5, 0.02, px) * 0.06 * vertical;
+  float runs = wnoise(vec2(uv.x * 2.6, uv.y * 0.09), 1.0);
+  v -= smoothstep(0.58, 0.9, runs) * 0.09 * vertical;
+  v += (wnoise(uv, 12.0) - 0.5) * 0.045 * detail(0.08, px);
+  return v;
+}
+
+float plasterSurface(vec2 uv, float px) {
+  float v = 1.0 + (wfbm(uv * vec2(1.0, 0.7), 0.4) - 0.5) * 0.12;
+  // The black monsoon streaks that run down every Dhaka facade from its ledges and sills.
+  float streak = wnoise(vec2(uv.x * 2.2, uv.y * 0.07), 1.0);
+  float ledge = smoothstep(0.0, 0.25, fract((uv.y + 0.2) / 3.1)) * (1.0 - fract((uv.y + 0.2) / 3.1));
+  v -= smoothstep(0.55, 0.88, streak) * (0.05 + 0.1 * ledge) * (0.5 + wnoise(uv * vec2(0.5, 0.2), 1.0));
+  // Rising damp and splash-back at the foot of the wall.
+  float damp = 1.0 - smoothstep(0.15, 1.1 + wnoise(vec2(uv.x, 0.0), 0.9) * 0.9, uv.y);
+  v -= damp * 0.1;
+  v += (wnoise(uv, 10.0) - 0.5) * 0.045 * detail(0.1, px);
+  return v;
+}
+
+float pavingSurface(vec2 uv, float px) {
+  vec2 cell = floor(uv / 0.6);
+  float h = hash12(vec2(mod(cell.x, WRAP / 0.6), cell.y));
+  float v = 1.0 + (h - 0.5) * 0.08;
+  // Broken and sunken slabs, dark with what collects in them.
+  v -= step(0.92, h) * 0.09;
+  float joints = max(joint(uv.x, 0.6, 0.018, px), joint(uv.y, 0.6, 0.018, px));
+  v -= joints * 0.09;
+  v += (wfbm(uv, 0.6) - 0.5) * 0.1;
+  return v;
+}
+
+float soilSurface(vec2 uv, float px) {
+  float v = 1.0 + (wfbm(uv, 0.3) - 0.5) * 0.12;
+  v -= smoothstep(0.62, 0.8, wnoise(uv, 1.3)) * 0.05;
+  v += (wnoise(uv, 9.0) - 0.5) * 0.06 * detail(0.1, px);
+  return v;
+}
+
+float roofSurface(vec2 uv, float px) {
+  float v = 1.0 + (wfbm(uv, 0.25) - 0.5) * 0.12;
+  // Where the rain stood: rings of dirt around shallow puddles.
+  float pool = wnoise(uv, 0.45);
+  v -= smoothstep(0.62, 0.7, pool) * (1.0 - smoothstep(0.7, 0.8, pool)) * 0.07;
+  v += (wnoise(uv, 11.0) - 0.5) * 0.04 * detail(0.09, px);
+  return v;
+}
+
+float brickSurface(vec2 uv, float px) {
+  float course = 0.085;
+  float row = floor(uv.y / course);
+  float shifted = uv.x / 0.24 + mod(row, 2.0) * 0.5;
+  float h = hash12(vec2(mod(floor(shifted), WRAP / 0.24), row));
+  float fade = detail(0.085, px);
+  float v = 1.0 + (h - 0.5) * 0.14 * fade;
+  float mortar = max(joint(uv.y, course, 0.012, px), joint(shifted * 0.24, 0.24, 0.012, px));
+  v += mortar * 0.16;
+  v -= smoothstep(0.6, 0.9, wnoise(vec2(uv.x * 2.0, uv.y * 0.1), 1.0)) * 0.08;
+  return v;
+}
+
+float tinSurface(vec2 uv, float px) {
+  float ridge = sin(uv.x * 6.2831 / 0.076);
+  float v = 1.0 + ridge * 0.06 * detail(0.076, px);
+  v -= smoothstep(0.55, 0.85, wfbm(uv, 0.9)) * 0.12;
+  return v;
+}
+
+float foliageSurface(vec3 p, float px) {
+  vec2 a = p.xy + p.z * 0.37;
+  vec2 b = p.zy - p.x * 0.29;
+  float leaves = 0.5 * (wnoise(a, 2.6) + wnoise(b + 13.0, 2.6));
+  float v = 1.0 + (leaves - 0.5) * 0.24;
+  float gaps = 0.5 * (wnoise(a, 7.0) + wnoise(b, 7.0));
+  v -= smoothstep(0.6, 0.8, gaps) * 0.22 * detail(0.1, px);
+  return v;
+}
+
+float barkSurface(vec2 uv, float px) {
+  return 1.0 + (wnoise(vec2(uv.x * 8.0, uv.y * 0.6), 1.0) - 0.5) * 0.16 * detail(0.06, px);
+}
+
+float weathering(float kind, vec3 p, vec3 n) {
+  if (kind < 0.5) return 1.0;
+  vec3 an = abs(n);
+  // Project onto the plane the face mostly lies in: floors and roofs take x and z, walls take
+  // their run along the street and their height.
+  vec2 uv = an.y > max(an.x, an.z) ? p.xz : an.z > an.x ? p.xy : vec2(p.z, p.y);
+  float vertical = 1.0 - smoothstep(0.55, 0.8, an.y);
+  float px = max(length(fwidth(p)), 1e-4);
+  int k = int(kind + 0.5);
+  if (k == 1) return foliageSurface(p, px);
+  if (k == 2) return asphalt(uv, px);
+  if (k == 3) return concreteSurface(uv, px, vertical);
+  if (k == 4) return vertical > 0.5 ? plasterSurface(uv, px) : roofSurface(uv, px);
+  if (k == 5) return pavingSurface(uv, px);
+  if (k == 6) return soilSurface(uv, px);
+  if (k == 7) return vertical > 0.5 ? plasterSurface(uv, px) : roofSurface(uv, px);
+  if (k == 8) return vertical > 0.5 ? brickSurface(uv, px) : roofSurface(uv, px);
+  if (k == 9) return tinSurface(uv, px);
+  if (k == 10) return barkSurface(uv, px);
+  return 1.0;
+}
+`;
+
 export const solidVertex = /* glsl */ `
 in vec4 colorPart;
+in float surface;
+out float vSurface;
+out vec3 vLine;
 out vec3 vColor;
 out vec3 vWorld;
 out vec3 vNormalWorld;
@@ -8,6 +191,8 @@ out vec2 vUv;
 out float vPart;
 out float vDepth;
 uniform float uFocusDepth;
+/** Distance along the line, wrapped at 1024 m: the city's textures are pinned to it, not to the screen. */
+uniform float uLineWrap;
 
 void main() {
   vec4 local = vec4(position, 1.0);
@@ -19,6 +204,8 @@ void main() {
   vec4 world = modelMatrix * local;
   vec4 view = viewMatrix * world;
   vWorld = world.xyz;
+  vSurface = surface;
+  vLine = vec3(uLineWrap - world.x, world.y, world.z);
   vNormalWorld = mat3(modelMatrix) * localNormal;
   vNormalView = mat3(viewMatrix) * vNormalWorld;
   vColor = colorPart.rgb;
@@ -41,7 +228,16 @@ in vec3 vNormalView;
 in vec2 vUv;
 in float vPart;
 in float vDepth;
+in float vSurface;
+in vec3 vLine;
 uniform sampler2D uAtlas;
+uniform highp sampler2DShadow uStaticShadow;
+uniform mat4 uStaticMatrix;
+uniform highp sampler2DShadow uDynamicShadow;
+uniform mat4 uDynamicMatrix;
+uniform vec2 uShadowTexel;
+uniform vec2 uShadowStep;
+uniform float uShadowOn;
 uniform vec4 uCutPlane;
 uniform float uCutEnabled;
 uniform float uNeutral;
@@ -50,6 +246,43 @@ layout(location = 1) out vec4 outData;
 
 const vec3 SUN = vec3(0.33, 0.80, 0.50);
 const vec3 PAPER = vec3(0.985, 0.992, 0.965);
+${WEATHERING}
+
+/** Light reaching a point through one shadow map: 1 in sun, 0 in shade, with a soft edge. */
+float shadowTap(highp sampler2DShadow map, mat4 matrix, vec3 world, vec3 n, float texel, float stepUv, float spread) {
+  vec3 p = world + n * texel * 1.8 + SUN * texel * 0.6;
+  vec4 clip = matrix * vec4(p, 1.0);
+  vec3 s = clip.xyz / clip.w * 0.5 + 0.5;
+  vec2 edge = min(s.xy, 1.0 - s.xy);
+  float inside = smoothstep(0.0, 0.02, min(edge.x, edge.y));
+  if (inside <= 0.0 || s.z >= 1.0) return 1.0;
+  float t = stepUv * spread;
+  float depth = s.z - 0.00012;
+  float lit = 2.0 * texture(map, vec3(s.xy, depth));
+  lit += texture(map, vec3(s.xy + vec2(t, t * 0.4), depth));
+  lit += texture(map, vec3(s.xy + vec2(-t * 0.4, t), depth));
+  lit += texture(map, vec3(s.xy + vec2(-t, -t * 0.4), depth));
+  lit += texture(map, vec3(s.xy + vec2(t * 0.4, -t), depth));
+  return mix(1.0, lit / 6.0, inside);
+}
+
+/** How much sun reaches this point: the city's pinned map and the traffic's own, together. */
+float sunlight(vec3 world, vec3 n) {
+  if (uShadowOn < 0.5) return 1.0;
+  float city = shadowTap(uStaticShadow, uStaticMatrix, world, n, uShadowTexel.x, uShadowStep.x, 1.2);
+  // Traffic, people and trains only ever shade the road and its pavements.
+  if (abs(world.z) > 24.0 || world.y > 32.0 || city < 0.02) return city;
+  vec3 p = world + n * uShadowTexel.y * 1.8 + SUN * uShadowTexel.y * 0.6;
+  vec4 clip = uDynamicMatrix * vec4(p, 1.0);
+  vec3 s = clip.xyz / clip.w * 0.5 + 0.5;
+  if (any(lessThan(s.xy, vec2(0.0))) || any(greaterThan(s.xy, vec2(1.0)))) return city;
+  float t = uShadowStep.y * 0.9;
+  float depth = s.z - 0.00012;
+  float moving = 0.5 * texture(uDynamicShadow, vec3(s.xy, depth));
+  moving += 0.25 * texture(uDynamicShadow, vec3(s.xy + vec2(t, t * 0.5), depth));
+  moving += 0.25 * texture(uDynamicShadow, vec3(s.xy - vec2(t, t * 0.5), depth));
+  return min(city, moving);
+}
 
 void main() {
   if (uCutEnabled > 0.5 && dot(vWorld, uCutPlane.xyz) > uCutPlane.w) discard;
@@ -64,6 +297,9 @@ void main() {
     base = mix(base, ink.rgb, ink.a);
   }
 
+  // Cast shadow, only on faces the sun would otherwise reach: the rest are already in shade.
+  float shade = mix(1.0, sunlight(vWorld, n), smoothstep(-0.05, 0.3, dot(n, SUN)));
+
   // Streets sit in the shade of what stands around them.
   float streetShade = mix(0.95, 1.0, smoothstep(0.0, 9.0, vWorld.y));
   vec3 lit;
@@ -71,9 +307,12 @@ void main() {
     // The city is one grey drawing: authored colour decides only how light each part is.
     float value = dot(base, vec3(0.3, 0.59, 0.11));
     value = 0.36 + 0.64 * pow(value, 0.72);
-    lit = PAPER * value * mix(tone, 1.0, 0.28) * streetShade;
+    value *= weathering(vSurface, vLine, n);
+    // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
+    float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.0 : 0.28;
+    lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.8, 1.0, shade);
   } else {
-    lit = base * tone * tint;
+    lit = base * tone * tint * mix(0.72, 1.0, shade);
   }
 
   outColor = vec4(lit, 1.0);

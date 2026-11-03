@@ -1,4 +1,4 @@
-import type { Batch, Vec3 } from "../geometry";
+import { Surface, type Batch, type Vec3 } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Context } from "./layout";
@@ -10,16 +10,29 @@ export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: Reado
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   b.part();
-  b.quad([x0, 0, FAR_FRONT], [x1, 0, FAR_FRONT], [x1, 0, FAR_BACK], [x0, 0, FAR_BACK], city.ground, [0, 1, 0]);
+  b.as(Surface.soil, () => b.quad([x0, 0, FAR_FRONT], [x1, 0, FAR_FRONT], [x1, 0, FAR_BACK], [x0, 0, FAR_BACK], city.ground, [0, 1, 0]));
   b.part();
-  b.quad([x0, 0.02, ROAD_HALF], [x1, 0.02, ROAD_HALF], [x1, 0.02, -ROAD_HALF], [x0, 0.02, -ROAD_HALF], city.road, [0, 1, 0]);
+  b.as(Surface.asphalt, () => b.quad([x0, 0.02, ROAD_HALF], [x1, 0.02, ROAD_HALF], [x1, 0.02, -ROAD_HALF], [x0, 0.02, -ROAD_HALF], city.road, [0, 1, 0]));
 
-  // Lane dashes, in line position so they stay continuous across chunks.
+  // Lane dashes, in line position so they stay continuous across chunks, worn like the tar under them.
+  b.as(Surface.asphalt, () => laneMarks(b, context, rng));
+  buildMedian(b, context, junctions);
+  for (const side of [1, -1]) buildPavement(b, context, side);
+}
+
+function laneMarks(b: Batch, context: Context, rng: Rng): void {
+  const x0 = -CHUNK_LENGTH;
+  const x1 = 0;
   for (const distance of latticeIn(context, 6)) {
     const x = localX(context, distance);
-    for (const z of [5.4, 9.4, -5.4, -9.4]) {
-      b.quad([x - 2.6, 0.03, z + 0.07], [x, 0.03, z + 0.07], [x, 0.03, z - 0.07], [x - 2.6, 0.03, z - 0.07], city.roadLine, [0, 1, 0]);
+    // Between the lanes: the boundaries of LANE_Z in traffic/flow.
+    for (const z of [4.9, 7.9, 10.75, -4.9, -7.9, -10.75]) {
+      b.quad([x - 2.8, 0.03, z + 0.07], [x, 0.03, z + 0.07], [x, 0.03, z - 0.07], [x - 2.8, 0.03, z - 0.07], city.roadLine, [0, 1, 0]);
     }
+  }
+  // Solid edge lines along the median and the kerb.
+  for (const z of [MEDIAN_HALF + 0.3, -(MEDIAN_HALF + 0.3), ROAD_HALF - 0.3, -(ROAD_HALF - 0.3)]) {
+    b.quad([x0, 0.03, z + 0.06], [x1, 0.03, z + 0.06], [x1, 0.03, z - 0.06], [x0, 0.03, z - 0.06], city.roadLine, [0, 1, 0]);
   }
   // Worn patches of darker tar, because every road here has been dug up at least twice.
   const patches = rng.int(2, 5);
@@ -29,11 +42,6 @@ export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: Reado
     b.quad([px - rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], [px - rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], 0xbcbbb5, [0, 1, 0]);
   }
 
-  // The viaduct's shadow, thrown away from the sun onto the far lanes.
-  b.part();
-  b.quad([x0, 0.028, -5], [x1, 0.028, -5], [x1, 0.028, -14], [x0, 0.028, -14], 0xb4b3ad, [0, 1, 0]);
-  buildMedian(b, context, junctions);
-  for (const side of [1, -1]) buildPavement(b, context, side);
 }
 
 function kerbStripes(b: Batch, context: Context, z: number, top: number, height: number): void {
@@ -50,7 +58,7 @@ function buildMedian(b: Batch, context: Context, junctions: ReadonlyArray<readon
   const solid = [-CHUNK_LENGTH, ...openings.flat(), 0];
   for (let i = 0; i + 1 < solid.length; i += 2) {
     b.part();
-    b.box(solid[i]!, 0, -MEDIAN_HALF, solid[i + 1]!, 0.26, MEDIAN_HALF, city.soil);
+    b.as(Surface.concrete, () => b.box(solid[i]!, 0, -MEDIAN_HALF, solid[i + 1]!, 0.26, MEDIAN_HALF, city.soil));
   }
   // A low clipped hedge along the median, as under the real viaduct, broken at each pier and junction.
   const piersHere = latticeIn(context, SPAN).map((distance) => localX(context, distance));
@@ -61,9 +69,9 @@ function buildMedian(b: Batch, context: Context, junctions: ReadonlyArray<readon
     const to = Math.min(edges[i + 1]!, 0);
     if (to <= from) continue;
     b.part();
-    b.box(from, 0.26, 0.5, to, 0.7, 1.1, 0xd6d8ce);
+    b.as(Surface.foliage, () => b.box(from, 0.26, 0.5, to, 0.7, 1.1, 0xd6d8ce));
     b.part();
-    b.box(from, 0.26, -1.1, to, 0.7, -0.5, 0xcfd2c6);
+    b.as(Surface.foliage, () => b.box(from, 0.26, -1.1, to, 0.7, -0.5, 0xcfd2c6));
   }
 }
 
@@ -73,8 +81,8 @@ function buildPavement(b: Batch, context: Context, side: number): void {
   const z0 = Math.min(inner, outer);
   const z1 = Math.max(inner, outer);
   b.part();
-  b.box(-CHUNK_LENGTH, 0, z0, 0, 0.2, z1, city.sidewalk);
-  kerbStripes(b, context, inner, 0.21, 0);
+  b.as(Surface.paving, () => b.box(-CHUNK_LENGTH, 0, z0, 0, 0.2, z1, city.sidewalk));
+  b.as(Surface.concrete, () => kerbStripes(b, context, inner, 0.21, 0));
   // Pavers and the drain slabs that are never quite level.
   for (const distance of latticeIn(context, 3)) {
     const x = localX(context, distance);
@@ -86,7 +94,7 @@ function buildPavement(b: Batch, context: Context, side: number): void {
 export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean, rng: Rng): void {
   for (const [z0, z1] of [[SIDEWALK_HALF - 4.5, FAR_FRONT], [FAR_BACK, -SIDEWALK_HALF + 4.5]] as const) {
     b.part();
-    b.quad([x0, 0.21, z1], [x1, 0.21, z1], [x1, 0.21, z0], [x0, 0.21, z0], 0x85848a, [0, 1, 0]);
+    b.as(Surface.asphalt, () => b.quad([x0, 0.21, z1], [x1, 0.21, z1], [x1, 0.21, z0], [x0, 0.21, z0], 0x85848a, [0, 1, 0]));
   }
   void rng;
   // Zebra crossing over the main road.

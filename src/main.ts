@@ -74,6 +74,7 @@ const quality = {
   calm: 0,
 };
 pipeline.setSamples(quality.samples);
+if (debugNumber("shadow") === 0) pipeline.setShadows(false);
 
 function resize(): void {
   pipeline.setPixelRatio(quality.ratio);
@@ -99,6 +100,9 @@ function adaptQuality(dt: number): void {
     } else if (quality.samples > 0) {
       quality.samples = 0;
       pipeline.setSamples(0);
+    } else if (pipeline.shadowsOn) {
+      // The last thing to give up: the drawing still reads without its cast shadows.
+      pipeline.setShadows(false);
     }
   } else if (average < 1 / 57) {
     quality.calm += 1;
@@ -507,16 +511,17 @@ function frame(now: number): void {
 
   world.update(distance, 320, 260);
   train.update(time, distance);
-  traffic.update(distance, moving ? time : 0, moving ? dt : 0);
 
   runTour(now);
   updateHover(dt);
   updateCameraAim(time);
   rig.update(reducedMotion ? 1 : dt, innerWidth / innerHeight);
   world.cull(rig.camera);
+  traffic.update(distance, moving ? time : 0, moving ? dt : 0, rig.camera);
   updateTags(dt);
   adaptQuality(dt);
   pipeline.setViewWidth(rig.width);
+  pipeline.setDistance(distance);
 
   // Passing every minute or two: never long enough to feel scheduled, never so rare it surprises.
   if (moving) {
@@ -527,7 +532,7 @@ function frame(now: number): void {
   opposing.group.visible = !reducedMotion && opposingX > -420;
   if (opposing.group.visible) opposing.update(time, distance * 2);
 
-  pipeline.render(scene, rig.camera, rig.focusDepth);
+  pipeline.render(scene, rig.camera, rig.focusDepth, { world: world.group, distance, cull: (camera) => world.cull(camera) });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

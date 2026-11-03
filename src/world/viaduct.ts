@@ -1,4 +1,4 @@
-import type { Batch, Vec3 } from "../geometry";
+import { Surface, type Batch, type Vec3 } from "../geometry";
 import { concrete, city } from "../shared/palette";
 import { posterUv } from "../signs/regions";
 import { CHUNK_LENGTH, DECK_HALF, DECK_Y, RAIL_Y, SPAN, TRACK_Z, latticeIn, localX, type Context } from "./layout";
@@ -212,20 +212,22 @@ function overhead(b: Batch, context: Context): void {
 
 /** The plain line between stations: girder, parapets, double track, overhead wires and piers. */
 export function buildViaduct(b: Batch, context: Context): void {
-  for (const distance of latticeIn(context, SPAN)) {
-    pier(b, localX(context, distance), Math.round(distance / SPAN));
-  }
-  for (const distance of latticeIn(context, SEGMENT)) {
-    const x1 = localX(context, distance);
-    const x0 = Math.max(x1 - SEGMENT, -CHUNK_LENGTH);
-    girderSegment(b, x0, Math.min(x1, 0));
-    parapet(b, x0, Math.min(x1, 0), DECK_HALF, 1);
-  }
+  b.as(Surface.concrete, () => {
+    for (const distance of latticeIn(context, SPAN)) {
+      pier(b, localX(context, distance), Math.round(distance / SPAN));
+    }
+    for (const distance of latticeIn(context, SEGMENT)) {
+      const x1 = localX(context, distance);
+      const x0 = Math.max(x1 - SEGMENT, -CHUNK_LENGTH);
+      girderSegment(b, x0, Math.min(x1, 0));
+      parapet(b, x0, Math.min(x1, 0), DECK_HALF, 1);
+    }
+  });
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   {
     b.part();
-    b.box(x0, DECK_Y - 0.04, -DECK_HALF, x1, DECK_Y, DECK_HALF, 0xb4afa3);
+    b.as(Surface.concrete, () => b.box(x0, DECK_Y - 0.04, -DECK_HALF, x1, DECK_Y, DECK_HALF, 0xb4afa3));
     // Cable troughs along the walkways.
     b.part();
     b.box(x0, DECK_Y, 3.5, x1, DECK_Y + 0.2, 4.1, 0xbdb8ac);

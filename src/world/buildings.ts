@@ -1,4 +1,4 @@
-import type { Batch } from "../geometry";
+import { Surface, type Batch } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { awnings, city, shutters, stucco } from "../shared/palette";
 import { SHOP_NAMES, billboardUv, shopUv } from "../signs/regions";
@@ -331,7 +331,7 @@ function drawRoof(b: Batch, x0: number, z0: number, x1: number, z1: number, y: n
   const sx = x0 + rng.range(inset, Math.max(inset, width - stairW - inset));
   const sz = z0 + rng.range(inset, Math.max(inset, depth * 0.55 - stairD));
   b.part();
-  b.box(sx, y, sz, sx + stairW, y + 2.6, sz + stairD, style.wall);
+  b.as(Surface.plaster, () => b.box(sx, y, sz, sx + stairW, y + 2.6, sz + stairD, style.wall));
   b.part();
   b.box(sx - 0.1, y + 2.6, sz - 0.1, sx + stairW + 0.1, y + 2.72, sz + stairD + 0.1, style.trim);
   if (lod === 0) {
@@ -452,10 +452,10 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
   const height = groundH + floors * FLOOR;
 
   b.part();
-  b.box(x0, 0, z0, x1, height, z1, style.wall);
+  b.as(Surface.plaster, () => b.box(x0, 0, z0, x1, height, z1, style.wall));
   // Roof slab, a shade lighter and a little stained.
   b.part();
-  b.box(x0 + 0.14, height - 0.01, z0 + 0.14, x1 - 0.14, height + 0.03, z1 - 0.14, rng.pick([0xe9e5da, 0xe2ddcf, 0xeeeade, 0xdedad0]));
+  b.as(Surface.roof, () => b.box(x0 + 0.14, height - 0.01, z0 + 0.14, x1 - 0.14, height + 0.03, z1 - 0.14, rng.pick([0xe9e5da, 0xe2ddcf, 0xeeeade, 0xdedad0])));
 
   b.at(x0, 0, z1, () => {
     drawFacade(b, width, floors, groundH, style, lod, rng);
@@ -480,7 +480,7 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
     }
   }, FACE_X);
 
-  drawParapet(b, x0, z0, x1, z1, height, 0.95, style.wall, style.trim);
+  b.as(Surface.plaster, () => drawParapet(b, x0, z0, x1, z1, height, 0.95, style.wall, style.trim));
   drawRoof(b, x0, z0, x1, z1, height, lod, style, rng);
 }
 
@@ -516,14 +516,14 @@ export function stackedBlock(b: Batch, plot: Plot, rng: Rng): void {
     const h = 3.1 * rng.int(2, 3);
     const ax0 = x0 + inset, ax1 = x1 - inset, az0 = z0 + inset, az1 = z1 - inset;
     b.part();
-    b.box(ax0, y, az0, ax1, y + h, az1, tier % 2 === 0 ? style.wall : pale);
+    b.as(Surface.plaster, () => b.box(ax0, y, az0, ax1, y + h, az1, tier % 2 === 0 ? style.wall : pale));
     const floors = Math.round(h / 3.1);
     b.at(ax0, y, az1, () => drawFacade(b, ax1 - ax0, floors, 0, style, lod, rng));
     b.at(ax0, y, az0, () => drawFacade(b, az1 - az0, floors, 0, style, lod, rng), FACE_X);
     y += h;
     // A terrace slab, wider than the storey below, with fins and a glass rail.
     b.part();
-    b.box(x0 - 0.5, y, z0 - 0.5, x1 + 0.5, y + 0.28, z1 + 0.5, 0xf2f1e9);
+    b.as(Surface.concrete, () => b.box(x0 - 0.5, y, z0 - 0.5, x1 + 0.5, y + 0.28, z1 + 0.5, 0xf2f1e9));
     y += 0.28;
     if (lod === 0 && tier < tiers - 1) {
       for (let u = x0 + 0.4; u < x1; u += 3.2) {
@@ -538,7 +538,7 @@ export function stackedBlock(b: Batch, plot: Plot, rng: Rng): void {
       b.box(x0 - 0.42, y + 0.98, z1 + 0.28, x1 + 0.3, y + 1.04, z1 + 0.34, 0xb0b2ad);
     }
   }
-  drawParapet(b, x0, z0, x1, z1, y, 0.8, style.wall, style.trim);
+  b.as(Surface.plaster, () => drawParapet(b, x0, z0, x1, z1, y, 0.8, style.wall, style.trim));
   drawRoof(b, x0, z0, x1, z1, y, lod, style, rng);
 }
 
@@ -554,7 +554,7 @@ export function glassTower(b: Batch, plot: Plot, rng: Rng): void {
   const spandrel = mixHex(curtain, 0xffffff, 0.35);
   const inset = Math.min(1.4, width * 0.08);
   b.part();
-  b.box(x0, 0, z0, x1, podium, z1, 0xd5d0c3);
+  b.as(Surface.concrete, () => b.box(x0, 0, z0, x1, podium, z1, 0xd5d0c3));
   b.part();
   b.box(x0 + inset, podium, z0 + inset, x1 - inset, height, z1 - inset, curtain);
   const towerW = width - inset * 2;
@@ -626,24 +626,16 @@ export function brickBlock(b: Batch, plot: Plot, rng: Rng): void {
     frame: 0x2f5a4c,
     glass: 0x4a6068,
   };
+  // The brick courses themselves come from the shader's brick surface.
   b.part();
-  b.box(x0, 0, z0, x1, height, z1, style.wall);
-  if (lod === 0) {
-    // Brick courses: thin mortar lines drawn only where the eye lands, on the road face.
-    b.at(x0, 0, z1, () => {
-      for (let y = groundH + 0.4; y < height; y += 0.62) {
-        b.part();
-        b.panel(0, y, width, y + 0.02, 0.006, mixHex(style.wall, 0xffffff, 0.22));
-      }
-    });
-  }
+  b.as(Surface.brick, () => b.box(x0, 0, z0, x1, height, z1, style.wall));
   b.part();
-  b.box(x0 + 0.1, height - 0.01, z0 + 0.1, x1 - 0.1, height + 0.03, z1 - 0.1, 0xbcb3a3);
+  b.as(Surface.roof, () => b.box(x0 + 0.1, height - 0.01, z0 + 0.1, x1 - 0.1, height + 0.03, z1 - 0.1, 0xbcb3a3));
   b.at(x0, 0, z1, () => {
     drawFacade(b, width, floors, groundH, style, lod, rng);
     if (plot.streetFront) drawShops(b, width, groundH, style, lod, rng);
   });
   b.at(x0, 0, z0, () => drawFacade(b, depth, floors, groundH, style, lod, rng), FACE_X);
-  drawParapet(b, x0, z0, x1, z1, height, 0.7, style.wall, 0xdcd6c8);
+  b.as(Surface.brick, () => drawParapet(b, x0, z0, x1, z1, height, 0.7, style.wall, 0xdcd6c8));
   drawRoof(b, x0, z0, x1, z1, height, lod, style, rng);
 }

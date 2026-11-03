@@ -1,4 +1,4 @@
-import { Color, DynamicDrawUsage, Group, InstancedMesh, Object3D, type ShaderMaterial } from "three";
+import { Color, DynamicDrawUsage, Frustum, Group, InstancedMesh, Matrix4, Object3D, Sphere, Vector3, type Camera, type ShaderMaterial } from "three";
 import type { Assets } from "../assets";
 import { Batch } from "../geometry";
 import { toBufferGeometry } from "../render";
@@ -10,8 +10,8 @@ import { buildVehicles } from "./vehicles";
 
 export interface Traffic {
   group: Group;
-  /** Advances the road by `dt` seconds with the train at `distance`, and redraws it. */
-  update(distance: number, time: number, dt: number): void;
+  /** Advances the road by `dt` seconds with the train at `distance`, and redraws what `camera` sees. */
+  update(distance: number, time: number, dt: number, camera: Camera): void;
 }
 
 const AHEAD = 220;
@@ -120,7 +120,17 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
   const kindIndex = new Map(KINDS.map((k, i) => [k, i]));
   let clock = 0;
 
+  const frustum = new Frustum();
+  const viewProjection = new Matrix4();
+  // A little larger than any vehicle, so one at the edge, or its shadow, never pops.
+  const probe = new Sphere(new Vector3(), 7);
+  const seen = (x: number, y: number, z: number): boolean => {
+    probe.center.set(x, y, z);
+    return frustum.intersectsSphere(probe);
+  };
+
   const place = (kind: Kind, x: number, z: number, yaw: number): void => {
+    if (!seen(x, 1, z)) return;
     const k = kindIndex.get(kind)!;
     const mesh = instanced[k]!;
     if (used[k]! >= mesh.instanceMatrix.count) return;
@@ -132,7 +142,9 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
 
   return {
     group,
-    update(distance, time, dt) {
+    update(distance, time, dt, camera) {
+      viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(viewProjection);
       clock += dt;
       const from = distance - BEHIND;
       const to = distance + AHEAD;
@@ -153,7 +165,7 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
         const s = from + (((travelled - from) % WINDOW) + WINDOW) % WINDOW;
         const frame = Math.floor(((time / cycle + walker.phase) % 1) * frames) % frames;
         const slot = walkCounts[walker.avatar]![frame]!;
-        if (slot >= PER_FRAME_POOL) continue;
+        if (slot >= PER_FRAME_POOL || !seen(distance - s, 1, walker.z)) continue;
         walkCounts[walker.avatar]![frame] = slot + 1;
         dummy.position.set(distance - s, 0.2, walker.z);
         dummy.rotation.set(0, walker.direction > 0 ? -Math.PI / 2 : Math.PI / 2, 0);

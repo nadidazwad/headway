@@ -20,6 +20,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { compositeFragment, fullscreenVertex, solidFragment, solidVertex } from "./shaders";
+import { createShadows, type ShadowFrame } from "./shadow";
 
 export interface CutPlane {
   /** World-space plane: everything with dot(p, normal) > w is removed. */
@@ -38,14 +39,21 @@ export interface Pipeline {
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
   setHaze(start: number, end: number): void;
+  /** How far the train has come: the city's surface textures are pinned to the line by it. */
+  setDistance(metres: number): void;
   /** Lets lines between small parts fade as the camera pulls back, so a wide view never turns to noise. */
   setViewWidth(metres: number): void;
   setPixelRatio(ratio: number): void;
   /** Multisample count of the main pass: 4, 2 or 0. */
   setSamples(samples: number): void;
   resize(width: number, height: number): void;
-  render(scene: Scene, camera: OrthographicCamera, focusDepth: number): void;
+  /** With `shadow`, the sun's passes run first: the city into its pinned map, the rest fresh. */
+  render(scene: Scene, camera: OrthographicCamera, focusDepth: number, shadow?: ShadowFrame): void;
+  setShadows(on: boolean): void;
+  readonly shadowsOn: boolean;
   readonly pixelRatio: number;
+  /** Triangles drawn by the last frame's sun and camera passes. */
+  readonly stats: { shadowTriangles: number; mainTriangles: number; staticTriangles: number; shadowMs: number; mainMs: number };
 }
 
 /**
@@ -70,9 +78,15 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
   target.textures[1]!.minFilter = LinearFilter;
   target.textures[1]!.magFilter = LinearFilter;
 
+  // Phones and software renderers get maps a quarter the size.
+  const info = context.getExtension("WEBGL_debug_renderer_info");
+  const gpu = info ? String(context.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+  const small = /mali|adreno|powervr|apple gpu|swiftshader|llvmpipe/i.test(gpu);
+  const shadows = createShadows(small ? { staticSize: [2048, 1024], dynamicSize: [1024, 512] } : { staticSize: [4096, 2048], dynamicSize: [2048, 1024] });
   const shared = {
     uAtlas: { value: null as Texture | null },
     uFocusDepth: { value: 0 },
+    uLineWrap: { value: 0 },
   };
 
   const solid = new ShaderMaterial({
@@ -84,6 +98,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uCutPlane: { value: new Vector4() },
       uCutEnabled: { value: 0 },
       uNeutral: { value: 1 },
+      ...shadows.uniforms,
     },
   });
 
@@ -91,6 +106,8 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     const material = solid.clone();
     material.uniforms.uAtlas = shared.uAtlas;
     material.uniforms.uFocusDepth = shared.uFocusDepth;
+    material.uniforms.uLineWrap = shared.uLineWrap;
+    Object.assign(material.uniforms, shadows.uniforms);
     material.uniforms.uNeutral!.value = neutral;
     return material;
   };
@@ -124,6 +141,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
   fullscreenScene.add(new Mesh(new PlaneGeometry(2, 2), composite));
   const fullscreenCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
+  const stats = { shadowTriangles: 0, mainTriangles: 0, staticTriangles: 0, shadowMs: 0, mainMs: 0 };
   let pixelRatio = 1;
   let cssWidth = 2;
   let cssHeight = 2;
@@ -154,6 +172,9 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     setAtlas(texture) {
       shared.uAtlas.value = texture;
     },
+    setDistance(metres) {
+      shared.uLineWrap.value = ((metres % 1024) + 1024) % 1024;
+    },
     setHaze(start, end) {
       composite.uniforms.uHaze!.value.set(start, end);
     },
@@ -175,7 +196,10 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       cssHeight = height;
       applySize();
     },
-    render(scene, camera, focusDepth) {
+    setShadows(on) {
+      shadows.enabled = on;
+    },
+    render(scene, camera, focusDepth, shadow) {
       shared.uFocusDepth.value = focusDepth;
       const { uFocus, uRight, uUp, uForward } = composite.uniforms;
       camera.updateMatrixWorld();
@@ -183,14 +207,26 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uUp!.value.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar((camera.top - camera.bottom) / 2);
       uForward!.value.setFromMatrixColumn(camera.matrixWorld, 2).negate();
       uFocus!.value.setFromMatrixPosition(camera.matrixWorld).addScaledVector(uForward!.value, focusDepth);
+      const t0 = performance.now();
+      if (shadow) shadows.render(renderer, scene, camera, shadow);
+      else shadows.uniforms.uShadowOn.value = 0;
+      stats.shadowMs = performance.now() - t0;
+      stats.shadowTriangles = renderer.info.render.triangles;
+      stats.staticTriangles = shadows.staticTriangles;
       renderer.setRenderTarget(target);
       renderer.clear(true, true, false);
       renderer.render(scene, camera);
+      stats.mainTriangles = renderer.info.render.triangles;
+      stats.mainMs = performance.now() - t0 - stats.shadowMs;
       renderer.setRenderTarget(null);
       renderer.render(fullscreenScene, fullscreenCamera);
     },
     get pixelRatio() {
       return pixelRatio;
+    },
+    stats,
+    get shadowsOn() {
+      return shadows.enabled;
     },
   };
 }

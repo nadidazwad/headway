@@ -74,7 +74,9 @@ export function createWorld(material: ShaderMaterial, seed: number): World {
     if (!needed.has(chunk.index)) return;
     const chunkGroup = new Group();
     const parts: LoadedPart[] = chunk.parts.map((part) => {
-      const mesh = new Mesh(toBufferGeometry(part), material);
+      const geometry = toBufferGeometry(part);
+      geometry.boundingBox = new Box3(new Vector3(...part.min), new Vector3(...part.max));
+      const mesh = new Mesh(geometry, material);
       // Culling happens against tight boxes in cull(), not three's bounding spheres.
       mesh.frustumCulled = false;
       chunkGroup.add(mesh);

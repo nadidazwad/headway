@@ -11,6 +11,7 @@ export function toBufferGeometry({ vertices, indices }: MeshData): BufferGeometr
   geometry.setAttribute("position", new InterleavedBufferAttribute(floats, 3, 0));
   geometry.setAttribute("normal", new InterleavedBufferAttribute(signed, 3, 12, true));
   geometry.setAttribute("colorPart", new InterleavedBufferAttribute(bytes, 4, 16, true));
+  geometry.setAttribute("surface", new InterleavedBufferAttribute(bytes, 1, 15, false));
   geometry.setAttribute("uv", new InterleavedBufferAttribute(shorts, 2, 10, true));
   geometry.setIndex(new BufferAttribute(indices, 1));
   return geometry;

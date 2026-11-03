@@ -1,1 +1,1 @@
-export { Batch, STRIDE, type MeshData, type Stampable, type Vec3 } from "./batch";
+export { Batch, STRIDE, Surface, type MeshData, type Stampable, type SurfaceKind, type Vec3 } from "./batch";

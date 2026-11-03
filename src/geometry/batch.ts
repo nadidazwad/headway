@@ -12,6 +12,25 @@ export interface MeshData {
 
 export const STRIDE = 24;
 
+/**
+ * What a face is made of, carried in the spare byte after the normal. The shader gives each its
+ * own weathering: tar for roads, monsoon streaks for plaster, formwork lines for concrete.
+ */
+export const Surface = {
+  plain: 0,
+  foliage: 1,
+  asphalt: 2,
+  concrete: 3,
+  plaster: 4,
+  paving: 5,
+  soil: 6,
+  roof: 7,
+  brick: 8,
+  tin: 9,
+  bark: 10,
+} as const;
+export type SurfaceKind = (typeof Surface)[keyof typeof Surface];
+
 /** A baked mesh from the asset library, ready to be copied into a batch. */
 export interface Stampable {
   count: number;
@@ -38,6 +57,51 @@ function canBeSeen(nx: number, ny: number, nz: number): boolean {
   return CORNERS.some((d) => nx * d[0] + ny * d[1] + nz * d[2] > -0.02);
 }
 
+
+/** An icosphere's unit vertices and faces, built once per subdivision level. */
+const icospheres = new Map<number, { points: number[][]; faces: number[][] }>();
+function icosphere(level: number): { points: number[][]; faces: number[][] } {
+  const cached = icospheres.get(level);
+  if (cached) return cached;
+  const t = (1 + Math.sqrt(5)) / 2;
+  const points: number[][] = [
+    [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1],
+  ].map(([x, y, z]) => {
+    const l = Math.hypot(x!, y!, z!);
+    return [x! / l, y! / l, z! / l];
+  });
+  let faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+  for (let l = 0; l < level; l++) {
+    const middle = new Map<string, number>();
+    const mid = (a: number, b: number): number => {
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`;
+      let index = middle.get(key);
+      if (index === undefined) {
+        const [ax, ay, az] = points[a]!;
+        const [bx, by, bz] = points[b]!;
+        const x = ax! + bx!, y = ay! + by!, z = az! + bz!;
+        const len = Math.hypot(x, y, z);
+        index = points.length;
+        points.push([x / len, y / len, z / len]);
+        middle.set(key, index);
+      }
+      return index;
+    };
+    const next: number[][] = [];
+    for (const [a, b, c] of faces) {
+      const ab = mid(a!, b!), bc = mid(b!, c!), ca = mid(c!, a!);
+      next.push([a!, ab, ca], [b!, bc, ab], [c!, ca, bc], [ab, bc, ca]);
+    }
+    faces = next;
+  }
+  const result = { points, faces };
+  icospheres.set(level, result);
+  return result;
+}
+
 type Mat = number[];
 const identity = (): Mat => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
@@ -54,6 +118,7 @@ export class Batch {
   private matrix: Mat = identity();
   private stack: Mat[] = [];
   private partId = 1;
+  private surfaceId: number = Surface.plain;
   private readonly lo: [number, number, number] = [Infinity, Infinity, Infinity];
   private readonly hi: [number, number, number] = [-Infinity, -Infinity, -Infinity];
 
@@ -72,6 +137,15 @@ export class Batch {
   /** Starts a new part. The ink pass draws a line wherever two parts meet. */
   part(): this {
     this.partId = (this.partId + 37) % 250 || 1;
+    return this;
+  }
+
+  /** Draws whatever `draw` adds as made of `kind`, then goes back to what it was before. */
+  as(kind: SurfaceKind, draw: () => void): this {
+    const before = this.surfaceId;
+    this.surfaceId = kind;
+    draw();
+    this.surfaceId = before;
     return this;
   }
 
@@ -183,6 +257,7 @@ export class Batch {
     this.i8[byte + 12] = Math.round((m[0]! * nx + m[1]! * ny + m[2]! * nz) * 127);
     this.i8[byte + 13] = Math.round((m[4]! * nx + m[5]! * ny + m[6]! * nz) * 127);
     this.i8[byte + 14] = Math.round((m[8]! * nx + m[9]! * ny + m[10]! * nz) * 127);
+    this.u8[byte + 15] = this.surfaceId;
     this.u8[byte + 16] = (color >> 16) & 255;
     this.u8[byte + 17] = (color >> 8) & 255;
     this.u8[byte + 18] = color & 255;
@@ -345,6 +420,55 @@ export class Batch {
         this.pushIndices(a, a + 1, b, b, a + 1, b + 1);
       }
     }
+    return this;
+  }
+
+  /**
+   * A lumpy round clump with smooth shading, flattened underneath: a cluster of leaves. Waves in
+   * random directions push the surface in and out, so every clump has its own outline.
+   */
+  blob(x: number, y: number, z: number, rx: number, ry: number, rz: number, color: number, bump: number, seed: number, level = 1): this {
+    const { points, faces } = icosphere(level);
+    let state = (seed * 2654435761) >>> 0;
+    const random = (): number => {
+      state = (Math.imul(state ^ (state >>> 15), 2246822507) + 0x9e3779b9) >>> 0;
+      return state / 4294967296;
+    };
+    // Broad lobes, then finer ones: the outline of a clump of leaves rather than a stone.
+    const waves = Array.from({ length: 7 }, (_, i) => {
+      const a = random() * Math.PI * 2;
+      const b = Math.acos(random() * 2 - 1);
+      const fine = i >= 3;
+      return { d: [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)], f: fine ? 6 + random() * 4 : 2 + random() * 2.5, p: random() * 6.283, w: fine ? 0.35 : 0.8 };
+    });
+    const placed = points.map(([px, py, pz]) => {
+      let lump = 0;
+      for (const w of waves) lump += w.w * Math.sin((px! * w.d[0]! + py! * w.d[1]! + pz! * w.d[2]!) * w.f + w.p);
+      const r = 1 + bump * lump * 0.22;
+      const under = py! < 0 ? 0.8 : 1;
+      return [x + px! * rx * r, y + py! * ry * r * under, z + pz! * rz * r];
+    });
+    const normals = placed.map(() => [0, 0, 0]);
+    for (const [a, b, c] of faces) {
+      const pa = placed[a!]!, pb = placed[b!]!, pc = placed[c!]!;
+      const ux = pb[0]! - pa[0]!, uy = pb[1]! - pa[1]!, uz = pb[2]! - pa[2]!;
+      const vx = pc[0]! - pa[0]!, vy = pc[1]! - pa[1]!, vz = pc[2]! - pa[2]!;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const i of [a!, b!, c!]) {
+        normals[i]![0]! += nx;
+        normals[i]![1]! += ny;
+        normals[i]![2]! += nz;
+      }
+    }
+    this.growVertices(placed.length);
+    this.growIndices(faces.length * 3);
+    const first = this.vertexCount;
+    placed.forEach((p, i) => {
+      const n = normals[i]!;
+      const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+      this.vertex(p[0]!, p[1]!, p[2]!, n[0]! / l, n[1]! / l, n[2]! / l, color);
+    });
+    for (const [a, b, c] of faces) this.pushIndices(first + a!, first + b!, first + c!);
     return this;
   }
 
