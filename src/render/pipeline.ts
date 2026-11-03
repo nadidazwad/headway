@@ -53,7 +53,41 @@ export interface Pipeline {
   readonly shadowsOn: boolean;
   readonly pixelRatio: number;
   /** Triangles drawn by the last frame's sun and camera passes. */
-  readonly stats: { shadowTriangles: number; mainTriangles: number; staticTriangles: number; shadowMs: number; mainMs: number };
+  readonly stats: { shadowTriangles: number; mainTriangles: number; staticTriangles: number; shadowMs: number; mainMs: number; shadowCalls: number; mainCalls: number; gpu: Record<string, number> };
+}
+
+/**
+ * GPU time per pass, in milliseconds and smoothed, for tuning on a shared or busy GPU where
+ * wall-clock frame times lie. Dev only, behind ?gputime.
+ */
+function gpuTimer(gl: WebGL2RenderingContext, on: boolean): { begin(name: string): void; end(): void; collect(into: Record<string, number>): void } {
+  const ext = on ? (gl.getExtension("EXT_disjoint_timer_query_webgl2") as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null) : null;
+  const open: Array<{ name: string; query: WebGLQuery }> = [];
+  let current: { name: string; query: WebGLQuery } | null = null;
+  return {
+    begin(name) {
+      if (!ext || current) return;
+      const query = gl.createQuery()!;
+      gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
+      current = { name, query };
+    },
+    end() {
+      if (!ext || !current) return;
+      gl.endQuery(ext.TIME_ELAPSED_EXT);
+      open.push(current);
+      current = null;
+    },
+    collect(into) {
+      if (!ext) return;
+      const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+      while (open.length && gl.getQueryParameter(open[0]!.query, gl.QUERY_RESULT_AVAILABLE)) {
+        const { name, query } = open.shift()!;
+        const ms = Number(gl.getQueryParameter(query, gl.QUERY_RESULT)) / 1e6;
+        gl.deleteQuery(query);
+        if (!disjoint) into[name] = (into[name] ?? ms) * 0.9 + ms * 0.1;
+      }
+    },
+  };
 }
 
 /**
@@ -141,7 +175,8 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
   fullscreenScene.add(new Mesh(new PlaneGeometry(2, 2), composite));
   const fullscreenCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  const stats = { shadowTriangles: 0, mainTriangles: 0, staticTriangles: 0, shadowMs: 0, mainMs: 0 };
+  const stats = { shadowTriangles: 0, mainTriangles: 0, staticTriangles: 0, shadowMs: 0, mainMs: 0, shadowCalls: 0, mainCalls: 0, gpu: {} as Record<string, number> };
+  const timer = gpuTimer(context as WebGL2RenderingContext, import.meta.env.DEV && new URLSearchParams(location.search).has("gputime"));
   let pixelRatio = 1;
   let cssWidth = 2;
   let cssHeight = 2;
@@ -208,18 +243,27 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uForward!.value.setFromMatrixColumn(camera.matrixWorld, 2).negate();
       uFocus!.value.setFromMatrixPosition(camera.matrixWorld).addScaledVector(uForward!.value, focusDepth);
       const t0 = performance.now();
+      timer.begin("shadow");
       if (shadow) shadows.render(renderer, scene, camera, shadow);
       else shadows.uniforms.uShadowOn.value = 0;
+      timer.end();
       stats.shadowMs = performance.now() - t0;
       stats.shadowTriangles = renderer.info.render.triangles;
+      stats.shadowCalls = renderer.info.render.calls;
       stats.staticTriangles = shadows.staticTriangles;
       renderer.setRenderTarget(target);
+      timer.begin("main");
       renderer.clear(true, true, false);
       renderer.render(scene, camera);
+      timer.end();
       stats.mainTriangles = renderer.info.render.triangles;
+      stats.mainCalls = renderer.info.render.calls;
       stats.mainMs = performance.now() - t0 - stats.shadowMs;
       renderer.setRenderTarget(null);
+      timer.begin("composite");
       renderer.render(fullscreenScene, fullscreenCamera);
+      timer.end();
+      timer.collect(stats.gpu);
     },
     get pixelRatio() {
       return pixelRatio;

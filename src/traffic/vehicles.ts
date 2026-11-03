@@ -28,11 +28,15 @@ function tire(b: Batch, x: number, y: number, z: number, r: number, width: numbe
 }
 
 /** A motorbike with its rider, helmeted; or, parked, without. Its nose points along -x. */
-export function drawMotorbike(b: Batch, rider: boolean): void {
+export function drawMotorbike(b: Batch, rider: boolean, body = 0xffffff): void {
   tire(b, -0.72, 0.3, 0, 0.3, 0.05);
   tire(b, 0.72, 0.3, 0, 0.3, 0.05);
   b.part();
-  b.ellipsoid(-0.05, 0.68, 0, 0.5, 0.17, 0.14, 0xffffff, 4, 8);
+  b.ellipsoid(-0.05, 0.68, 0, 0.5, 0.17, 0.14, body, 4, 8);
+  b.part();
+  // Engine block and exhaust under the tank.
+  b.box(-0.2, 0.36, -0.12, 0.25, 0.6, 0.12, 0x3a3e40);
+  b.bar([0.05, 0.38, 0.14], [0.75, 0.48, 0.16], 0.04, 0.035, CHROME, 5);
   b.part();
   b.box(0.1, 0.72, -0.14, 0.72, 0.84, 0.14, 0x1f2224);
   b.part();

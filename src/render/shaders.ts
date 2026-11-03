@@ -301,16 +301,16 @@ void main() {
   float shade = mix(1.0, sunlight(vWorld, n), smoothstep(-0.05, 0.3, dot(n, SUN)));
 
   // Streets sit in the shade of what stands around them.
-  float streetShade = mix(0.95, 1.0, smoothstep(0.0, 9.0, vWorld.y));
+  float streetShade = mix(0.97, 1.0, smoothstep(0.0, 9.0, vWorld.y));
   vec3 lit;
   if (uNeutral > 0.5) {
     // The city is one grey drawing: authored colour decides only how light each part is.
     float value = dot(base, vec3(0.3, 0.59, 0.11));
-    value = 0.36 + 0.64 * pow(value, 0.72);
+    value = 0.42 + 0.58 * pow(value, 0.7);
     value *= weathering(vSurface, vLine, n);
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
-    float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.0 : 0.28;
-    lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.8, 1.0, shade);
+    float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.12 : 0.36;
+    lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.84, 1.0, shade);
   } else {
     lit = base * tone * tint * mix(0.72, 1.0, shade);
   }

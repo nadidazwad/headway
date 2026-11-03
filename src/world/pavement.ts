@@ -136,7 +136,8 @@ function parkedBikes(b: Batch, x: number, side: number, rng: Rng): number {
   const z = side * (FRONTAGE + 0.85);
   for (let i = 0; i < count; i++) {
     b.part();
-    b.at(x + i * 0.85, 0.2, z, () => drawMotorbike(b, false), side * (Math.PI / 2 + rng.range(-0.75, -0.55)));
+    const body = rng.pick([0x9a2a24, 0x1f2224, 0x2f4f8a, 0x5e6a6d, 0xc8413a, 0x3a3e40]);
+    b.at(x + i * 0.85, 0.2, z, () => drawMotorbike(b, false, body), side * (Math.PI / 2 + rng.range(-0.75, -0.55)));
   }
   return count * 0.85 + 0.8;
 }
