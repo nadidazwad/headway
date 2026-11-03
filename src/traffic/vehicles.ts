@@ -27,10 +27,8 @@ function tire(b: Batch, x: number, y: number, z: number, r: number, width: numbe
   }
 }
 
-/** A motorbike with its rider, helmeted. */
-function motorbike(): MeshData {
-  const b = new Batch(512);
-  b.cull = false;
+/** A motorbike with its rider, helmeted; or, parked, without. Its nose points along -x. */
+export function drawMotorbike(b: Batch, rider: boolean): void {
   tire(b, -0.72, 0.3, 0, 0.3, 0.05);
   tire(b, 0.72, 0.3, 0, 0.3, 0.05);
   b.part();
@@ -40,6 +38,17 @@ function motorbike(): MeshData {
   b.part();
   b.bar([-0.72, 0.3, 0], [-0.46, 0.92, 0], 0.03, 0.03, 0x62686a, 4);
   b.bar([-0.46, 0.96, -0.28], [-0.46, 0.96, 0.28], 0.016, 0.016, 0x20242a, 4);
+  if (rider) riderOn(b);
+}
+
+function motorbike(rider: boolean): MeshData {
+  const b = new Batch(512);
+  b.cull = false;
+  drawMotorbike(b, rider);
+  return b.finish();
+}
+
+function riderOn(b: Batch): void {
   b.part();
   b.bar([0.15, 0.82, 0.13], [-0.1, 0.42, 0.18], 0.06, 0.045, 0x2d3a4a, 6);
   b.bar([0.15, 0.82, -0.13], [-0.1, 0.42, -0.18], 0.06, 0.045, 0x2d3a4a, 6);
@@ -52,10 +61,9 @@ function motorbike(): MeshData {
   b.ellipsoid(-0.02, 1.53, 0, 0.13, 0.135, 0.13, 0xc23a33, 6, 9);
   b.part();
   b.quad([-0.14, 1.47, -0.08], [-0.14, 1.47, 0.08], [-0.13, 1.56, 0.08], [-0.13, 1.56, -0.08], 0x1b1f22, [-1, 0, 0]);
-  return b.finish();
 }
 
 /** Motorbikes are the one vehicle still modelled here: nothing downloaded beat it at this size. */
-export function buildVehicles(): { bike: MeshData } {
-  return { bike: motorbike() };
+export function buildVehicles(): { bike: MeshData; parkedBike: MeshData } {
+  return { bike: motorbike(true), parkedBike: motorbike(false) };
 }

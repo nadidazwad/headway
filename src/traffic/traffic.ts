@@ -28,8 +28,8 @@ const RICKSHAW_SEATS = {
 const WALKING_CAST = ["Male_Adult_15", "Female_Adult_06", "Male_Adult_08", "Female_Adult_10", "Female_Adult_05", "Male_Adult_17"];
 const PER_FRAME_POOL = 14;
 /** The band of pavement people walk in: inside the kerb's poles and trees, outside the stalls and stairs. */
-const WALK_INNER = ROAD_HALF + 0.95;
-const WALK_OUTER = ROAD_HALF + 2.3;
+const WALK_INNER = ROAD_HALF + 1.45;
+const WALK_OUTER = ROAD_HALF + 2.4;
 
 /** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
 function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {

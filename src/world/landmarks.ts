@@ -145,7 +145,7 @@ export function teaStall(b: Batch, assets: Assets, x: number, side: number, rng:
 
 /** A fruit cart, heaped with whatever is in season. */
 export function fruitCart(b: Batch, assets: Assets, x: number, side: number, rng: Rng): void {
-  const z = side * (ROAD_HALF + 1.5);
+  const z = side * (ROAD_HALF + 3.1);
   const y = 0.22;
   b.part();
   b.box(x - 1, y + 0.55, z - 0.45, x + 1, y + 0.68, z + 0.45, 0x8c6a44);

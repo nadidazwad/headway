@@ -140,7 +140,7 @@ function idm(spec: Spec, v: number, desired: number, gap: number, closing: numbe
 export function createFlow(options: FlowOptions): Flow {
   const rng = new Rng(hashSeed(options.seed, 919));
   const mix = options.mix ?? DEFAULT_MIX;
-  const density = options.density ?? 0.85;
+  const density = options.density ?? 1.15;
   const vehicles: Vehicle[] = [];
   const crossers: Crosser[] = [];
   const lanes: Vehicle[][] = Array.from({ length: 8 }, () => []);
@@ -454,7 +454,9 @@ export function createFlow(options: FlowOptions): Flow {
         vehicle.z = settle + sway;
         if (vehicle.change >= 1) vehicle.zFrom = lane;
         const lateral = (vehicle.z - before) / dt;
-        const target = Math.max(-MAX_YAW, Math.min(MAX_YAW, Math.atan2(lateral, Math.max(vehicle.v, 2)))) * vehicle.direction;
+        // A long vehicle turns its nose less for the same sideways shift.
+        const limit = MAX_YAW * Math.min(1, 4 / vehicle.length);
+        const target = Math.max(-limit, Math.min(limit, Math.atan2(lateral, Math.max(vehicle.v, 2)))) * vehicle.direction;
         vehicle.yaw += (target - vehicle.yaw) * Math.min(1, dt * 5);
         if (vehicle.s < from - 6 || vehicle.s > to + 40) {
           recycle(vehicle, from, to);

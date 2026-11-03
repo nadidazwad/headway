@@ -165,7 +165,8 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
       if (!rng.chance(0.55)) continue;
       const x = localX(context, distance) + rng.range(-3, 3);
       if (!clearX(x, side)) continue;
-      const treeZ = side * (ROAD_HALF + 2.2);
+      // In the kerb band, with the poles, so the strip people walk in stays clear.
+      const treeZ = side * (ROAD_HALF + 0.85);
       const h = rng.range(6.5, side > 0 ? 8.5 : 11);
       tree(b, x, treeZ, h, rng);
     }

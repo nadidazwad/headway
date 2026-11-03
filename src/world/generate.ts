@@ -8,6 +8,7 @@ import { palm, tree } from "./nature";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
 import { buildViaduct } from "./viaduct";
+import { furnishPavements } from "./pavement";
 
 export interface ChunkData {
   index: number;
@@ -158,6 +159,7 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
     else fruitCart(street, assets, x, side, rng);
   }
   if (bridge) footBridge(street, assets, toLocal(bridge.centre), [-bridge.stairs[0], -bridge.stairs[1]], rng);
+  furnishPavements(street, assets, rng, clear);
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;
