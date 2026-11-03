@@ -8,7 +8,7 @@ import { Rng, hashSeed } from "./shared/rng";
 import { createAtlas } from "./signs/atlas";
 import { nextThought, operatorFor, rosterFor, type Passenger } from "./thoughts";
 import { createTraffic } from "./traffic";
-import { CAB_DEPTH, TRAIN_LENGTH, createRiders, createTrain, type TrainCar } from "./train";
+import { CAB_DEPTH, CAR_LENGTH, NOSE_AT, TRAIN_LENGTH, createRiders, createTrain, type Riders, type TrainCar } from "./train";
 import { createOverlay, type Point } from "./ui";
 import { RAIL_Y, TRACK_Z, createWorld } from "./world";
 
@@ -126,13 +126,15 @@ void createAtlas(pipeline.renderer.capabilities.getMaxAnisotropy()).then((atlas)
 
 // Passengers ------------------------------------------------------------------------------------
 
-const crews: Passenger[][] = train.cars.map((car) => {
-  const roster = rosterFor(assets, seed, car.index, car.theme, car.index === 0 ? -7.9 + CAB_DEPTH + 0.2 : -7.9, car.index === 5 ? 7.9 - CAB_DEPTH - 0.2 : 7.9);
-  return car.index === 0 ? [...roster, operatorFor(assets, seed)] : roster;
-});
+const crews: Passenger[][] = train.cars.map((car) =>
+  rosterFor(assets, seed, car.index, car.theme, car.index === 0 ? -NOSE_AT + CAB_DEPTH + 0.2 : -CAR_LENGTH / 2, car.index === 5 ? NOSE_AT - CAB_DEPTH - 0.2 : CAR_LENGTH / 2),
+);
+/** The operator rides behind the cab's own wall, not among the women of the first coach. */
+const cabCrew: Passenger[] = [operatorFor(assets, seed)];
 
 /** Every coach keeps a light crew for looking in through the windows, and a detailed, moving one for when it is opened. */
 const riders = train.cars.map((car) => createRiders(car, crews[car.index]!, assets, pipeline.solid, seed));
+const cabRiders = createRiders(train.cars[0]!, cabCrew, assets, pipeline.solid, seed, false);
 
 // A second set on the other track carries no one close enough to see, only its light crew.
 opposing.cars.forEach((car, index) => {
@@ -154,26 +156,29 @@ interface Target {
   theme: "cab" | TrainCar["theme"];
   x0: number;
   x1: number;
+  riders: Riders;
   speakers: () => Passenger[];
 }
 
-const CAB_END = CAB_DEPTH;
+const cabEnd = CAR_LENGTH / 2 - NOSE_AT + CAB_DEPTH;
 const targets: Target[] = [
   {
     index: 0,
     car: train.cars[0]!,
     theme: "cab",
     x0: -0.2,
-    x1: CAB_END,
-    speakers: () => crews[0]!.filter((p) => p.id === "operator"),
+    x1: cabEnd,
+    riders: cabRiders,
+    speakers: () => cabCrew,
   },
   ...train.cars.map((car) => ({
     index: car.index + 1,
     car,
     theme: car.theme,
-    x0: car.index === 0 ? CAB_END : car.bounds.min.x,
+    x0: car.index === 0 ? cabEnd : car.bounds.min.x,
     x1: car.bounds.max.x,
-    speakers: () => crews[car.index]!.filter((p) => p.thought && p.id !== "operator"),
+    riders: riders[car.index]!,
+    speakers: () => crews[car.index]!.filter((p) => p.thought),
   })),
 ];
 
@@ -311,7 +316,7 @@ canvas.addEventListener("click", (event) => {
   // floor or seats takes the camera back out. Anywhere else, the click picks what to open.
   if (focused && under === focused) {
     const { origin, direction } = rig.ray(event.clientX, event.clientY, innerWidth, innerHeight);
-    const { hit, passenger } = riders[focused.car.index]!.pick(origin, direction);
+    const { hit, passenger } = focused.riders.pick(origin, direction);
     if (hit) {
       if (passenger?.thought && focused.speakers().includes(passenger)) {
         openBubbleId = passenger.id;
@@ -421,12 +426,19 @@ function updateHover(dt: number): void {
 
   // Only a click opens a coach: hovering names it, zooming only zooms.
   const rate = reducedMotion ? 100 : 3.4;
+  const ease = (from: number, goal: number): number => {
+    const next = from + (goal - from) * (1 - Math.exp(-rate * dt));
+    return Math.abs(goal - next) < 0.002 ? goal : next;
+  };
   for (const car of train.cars) {
-    const goal = focused?.car === car ? 1 : 0;
-    car.openness += (goal - car.openness) * (1 - Math.exp(-rate * dt));
-    if (Math.abs(goal - car.openness) < 0.002) car.openness = goal;
+    const cabinFocused = focused?.car === car && focused.theme === "cab";
+    car.openness = ease(car.openness, focused?.car === car && !cabinFocused ? 1 : 0);
     riders[car.index]!.show(car.openness > 0.01);
-    car.showDetail(car.openness > 0.01 || aim.width < 32);
+    if (car.cabin) {
+      car.cabin.openness = ease(car.cabin.openness, cabinFocused ? 1 : 0);
+      cabRiders.show(car.cabin.openness > 0.01);
+    }
+    car.showDetail(car.openness > 0.01 || (car.cabin?.openness ?? 0) > 0.01 || aim.width < 32);
   }
 
   // Thoughts belong to the coach that is open.

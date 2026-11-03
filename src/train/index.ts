@@ -9,6 +9,7 @@ export {
   FLOOR_Y,
   HALF_WIDTH,
   INSIDE_HALF,
+  NOSE_AT,
   ROOF_Y,
   STRAP_RAIL_Z,
   STRAP_STEP,

@@ -69,7 +69,8 @@ function rayToUpright(origin: Vector3, direction: Vector3, base: Vector3, height
   return { distance: Math.hypot(px, py, pz), along: t };
 }
 
-export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, material: ShaderMaterial, seed: number): Riders {
+/** @param walkers whether anyone paces the aisle: a coach has one, a driving cab does not */
+export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, material: ShaderMaterial, seed: number, hasWalkers = true): Riders {
   const stampOne = (draw: (b: Batch) => void): BufferGeometry => {
     const b = new Batch(1 << 11);
     b.cull = false;
@@ -116,7 +117,7 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
       // Long enough to read as going somewhere, not as a person pacing on the spot.
       if (to - from > 3.6) stretches.push([from, to]);
     }
-    const count = Math.min(stretches.length, rng.int(1, 2));
+    const count = hasWalkers ? Math.min(stretches.length, rng.int(1, 2)) : 0;
     const cast = assets.avatars.map((_, i) => i);
     for (const [from, to] of rng.shuffled(stretches).slice(0, count)) {
       const avatar = rng.pick(cast);

@@ -40,6 +40,8 @@ export const Surface = {
   figure: 11,
   /** The ribbed band on a viaduct pier: drawn by the shader, so it can fade before it aliases. */
   fluted: 12,
+  /** Walls inside the train: lit by the coach's own lamps, so they take no blue from facing away from the sun. */
+  interior: 13,
 } as const;
 export type SurfaceKind = (typeof Surface)[keyof typeof Surface];
 

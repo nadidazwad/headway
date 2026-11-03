@@ -330,7 +330,8 @@ void main() {
     float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.12 : 0.36;
     lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.84, 1.0, shade);
   } else {
-    lit = base * tone * tint * mix(0.72, 1.0, shade);
+    bool lamplit = vSurface > 12.5 && vSurface < 13.5;
+    lit = lamplit ? base * mix(tone, 1.0, 0.72) : base * tone * tint * mix(0.72, 1.0, shade);
   }
 
   outColor = vec4(lit, 1.0);

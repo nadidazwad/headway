@@ -1,6 +1,6 @@
 import type { Assets, Outfit, PersonPose } from "../assets";
 import { Rng, hashSeed } from "../shared/rng";
-import { BENCHES, DOOR_CENTERS, INSIDE_HALF, STRAP_RAIL_Z, STRAP_STEP, WHEELCHAIR_BAY, seatCentres } from "../train/layout";
+import { BENCHES, DOOR_CENTERS, INSIDE_HALF, NOSE_AT, STRAP_RAIL_Z, STRAP_STEP, WHEELCHAIR_BAY, seatCentres } from "../train/layout";
 import { NAMES_F, NAMES_M, OPERATOR_THOUGHTS, THOUGHTS, type Thought, type Theme } from "./corpus";
 
 export interface Passenger {
@@ -135,7 +135,7 @@ export function operatorFor(assets: Assets, seed: number): Passenger {
     female: false,
     avatar: Math.max(0, avatar),
     pose: "sit",
-    x: -7.9 + 1.32,
+    x: -NOSE_AT + 1.32,
     z: -0.28,
     facing: -Math.PI / 2,
     thought: OPERATOR_THOUGHTS[seed % OPERATOR_THOUGHTS.length]!,

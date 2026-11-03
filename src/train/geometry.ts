@@ -1,4 +1,4 @@
-import { Batch, type MeshData, type Vec3 } from "../geometry";
+import { Batch, Surface, type MeshData, type Vec3 } from "../geometry";
 import { train as c } from "../shared/palette";
 import { trainUv, type TrainPrint } from "../signs/regions";
 import {
@@ -9,10 +9,14 @@ import {
   DOOR_CENTERS,
   DOOR_HALF,
   DOOR_HEIGHT,
+  END_POST,
+  END_RETURN,
   FLOOR_Y,
+  GAP,
   HALF_WIDTH,
   HEAD_Y,
   INSIDE_HALF,
+  NOSE_AT,
   RING_DROP,
   ROOF_Y,
   SEAT_HEIGHT,
@@ -30,6 +34,8 @@ export interface CarMeshes {
   fixed: MeshData;
   /** Near wall, roof and roof equipment: the part cut away to look inside. */
   shell: MeshData;
+  /** The front cab's own skin, cut away apart from the coach behind it. */
+  cabin: MeshData | null;
   /** Everything only worth drawing from close to: built the first time anyone gets close. */
   detail: () => MeshData;
 }
@@ -51,6 +57,16 @@ export const WHEEL_Z = 0.72;
 const SEAM = 0x9aa0a2;
 const GASKET = 0x2e3438;
 const STEEL_POLE = 0xe3e6e6;
+const GUTTER = 0x50565a;
+const END_STEEL = 0x7f8488;
+
+/** Which ends of a car meet another coach, rather than a cab. */
+interface PlainEnds {
+  from: boolean;
+  to: boolean;
+}
+const flatFrom = (x: number, ends: PlainEnds): number => (ends.from ? x + END_POST : x);
+const flatTo = (x: number, ends: PlainEnds): number => (ends.to ? x - END_POST : x);
 
 const printed = (b: Batch, name: TrainPrint, a: Vec3, d: Vec3, cc: Vec3, e: Vec3, facing: Vec3): void => {
   b.quad(a, d, cc, e, 0xffffff, facing, trainUv(name));
@@ -176,8 +192,10 @@ function underframe(b: Batch, x0: number, x1: number): void {
 }
 
 /** The near skin: smooth stainless panels round every window and door, with real openings. */
-function bodySide(b: Batch, x0: number, x1: number, women: boolean): void {
+function bodySide(b: Batch, bodyFrom: number, bodyTo: number, women: boolean, ends: PlainEnds): void {
   const z = HALF_WIDTH;
+  const x0 = flatFrom(bodyFrom, ends);
+  const x1 = flatTo(bodyTo, ends);
   const openings: Array<[number, number, "door" | "window"]> = [
     ...DOOR_CENTERS.map((center) => [center - DOOR_HALF - 0.1, center + DOOR_HALF + 0.1, "door"] as [number, number, "door"]),
     ...WINDOWS.map(([a, d]) => [a, d, "window"] as [number, number, "window"]),
@@ -242,6 +260,21 @@ function bodySide(b: Batch, x0: number, x1: number, women: boolean): void {
     if (center + DOOR_HALF < x0 || center - DOOR_HALF > x1) continue;
     doorway(b, center, women);
   }
+  if (ends.from) endPost(b, x0, -1);
+  if (ends.to) endPost(b, x1, 1);
+}
+
+/**
+ * The bare stainless post that closes a side: the green band and rub rail stop where it starts,
+ * and it turns in towards the end wall, with the gutter sweeping down onto it.
+ */
+function endPost(b: Batch, x: number, outward: number): void {
+  const end = x + outward * END_POST;
+  const y0 = FLOOR_Y - 0.05;
+  b.part();
+  b.quad([x, y0, HALF_WIDTH], [end, y0, HALF_WIDTH - END_RETURN], [end, SHOULDER_Y, HALF_WIDTH - END_RETURN], [x, SHOULDER_Y, HALF_WIDTH], c.silverDark, [outward * 0.3, 0, 1]);
+  b.part();
+  b.bar([x, SHOULDER_Y + 0.01, HALF_WIDTH + 0.005], [x + outward * 0.12, SHOULDER_Y - 0.2, HALF_WIDTH - END_RETURN * 0.5], 0.022, 0.018, GUTTER, 5);
 }
 
 /** A doorway from outside: stainless leaves with tall round-cornered windows, between red posts. */
@@ -283,23 +316,51 @@ function doorway(b: Batch, center: number, women: boolean): void {
 }
 
 const roofProfile = (u: number): number => SHOULDER_Y + (ROOF_Y - SHOULDER_Y) * (1 - Math.abs(u) ** 2.6);
+/** Where the roof meets a plain end: drawn in with the post and rolled down a little. */
+const ROOF_ROLL = 0.04;
+const ROOF_ROWS = 8;
+const endWidth = HALF_WIDTH - END_RETURN;
 
 /** A strip of roof across the car, smooth from shoulder to crest. */
 function roofSection(b: Batch, x0: number, x1: number, color: number): void {
-  const rows = 8;
-  for (let i = 0; i < rows; i++) {
-    const u0 = -1 + (i * 2) / rows;
-    const u1 = -1 + ((i + 1) * 2) / rows;
+  for (let i = 0; i < ROOF_ROWS; i++) {
+    const u0 = -1 + (i * 2) / ROOF_ROWS;
+    const u1 = -1 + ((i + 1) * 2) / ROOF_ROWS;
     const z0 = u0 * HALF_WIDTH;
     const z1 = u1 * HALF_WIDTH;
     b.quad([x0, roofProfile(u0), z0], [x0, roofProfile(u1), z1], [x1, roofProfile(u1), z1], [x1, roofProfile(u0), z0], color, [0, 1, 0]);
   }
 }
 
+/** A wall across the car at x, up to just under the roof's curve. */
+function archedWall(b: Batch, x: number, facing: number, y0: number, width: number, color: number): void {
+  for (let i = 0; i < ROOF_ROWS; i++) {
+    const u0 = -1 + (i * 2) / ROOF_ROWS;
+    const u1 = -1 + ((i + 1) * 2) / ROOF_ROWS;
+    b.quad([x, y0, u0 * width], [x, y0, u1 * width], [x, roofProfile(u1) - ROOF_ROLL, u1 * width], [x, roofProfile(u0) - ROOF_ROLL, u0 * width], color, [facing, 0, 0]);
+  }
+}
+
+function roofEnd(b: Batch, x: number, outward: number, color: number): void {
+  const end = x + outward * END_POST;
+  for (let i = 0; i < ROOF_ROWS; i++) {
+    const u0 = -1 + (i * 2) / ROOF_ROWS;
+    const u1 = -1 + ((i + 1) * 2) / ROOF_ROWS;
+    b.quad(
+      [x, roofProfile(u0), u0 * HALF_WIDTH],
+      [x, roofProfile(u1), u1 * HALF_WIDTH],
+      [end, roofProfile(u1) - ROOF_ROLL, u1 * endWidth],
+      [end, roofProfile(u0) - ROOF_ROLL, u0 * endWidth],
+      color,
+      [outward * 0.2, 1, 0],
+    );
+  }
+}
+
 function roofEquipment(b: Batch, x0: number, x1: number, pantograph: boolean): void {
   // Rain gutter along the shoulder.
   b.part();
-  b.box(x0, SHOULDER_Y - 0.03, HALF_WIDTH - 0.03, x1, SHOULDER_Y + 0.03, HALF_WIDTH + 0.02, 0x50565a);
+  b.box(x0, SHOULDER_Y - 0.03, HALF_WIDTH - 0.03, x1, SHOULDER_Y + 0.03, HALF_WIDTH + 0.02, GUTTER);
   for (const center of [-4.2, 4.2]) {
     if (center - 1.5 < x0 || center + 1.5 > x1) continue;
     airConditioner(b, center);
@@ -533,25 +594,78 @@ function lamp(b: Batch, at: Vec3, r: number, d: number, ring = 0xb6bbbd, core: n
   }
 }
 
-/** The outside of a car's end, with its gangway door. */
+/** The outside of a car's end: dark in the photographs, in shade and catching none of the sky. */
 function endWall(b: Batch, x: number, facing: number): void {
+  // The underframe's own end closes the wall below this.
   b.part();
-  b.quad([x, FLOOR_Y - 0.26, -HALF_WIDTH], [x, FLOOR_Y - 0.26, HALF_WIDTH], [x, ROOF_Y - 0.1, HALF_WIDTH], [x, ROOF_Y - 0.1, -HALF_WIDTH], c.silver, [facing, 0, 0]);
+  archedWall(b, x, facing, FLOOR_Y - 0.03, endWidth, END_STEEL);
   b.part();
-  b.quad([x + facing * 0.01, FLOOR_Y, -0.55], [x + facing * 0.01, FLOOR_Y, 0.55], [x + facing * 0.01, FLOOR_Y + 2, 0.55], [x + facing * 0.01, FLOOR_Y + 2, -0.55], c.silverDark, [facing, 0, 0]);
-  b.part();
-  b.quad([x + facing * 0.02, FLOOR_Y + 1.05, -0.3], [x + facing * 0.02, FLOOR_Y + 1.05, 0.3], [x + facing * 0.02, FLOOR_Y + 1.85, 0.3], [x + facing * 0.02, FLOOR_Y + 1.85, -0.3], c.glass, [facing, 0, 0]);
+  for (const z of [-1, 1]) {
+    const u = z * (endWidth - 0.34);
+    b.quad([x + facing * 0.004, FLOOR_Y - 0.03, u - 0.008], [x + facing * 0.004, FLOOR_Y - 0.03, u + 0.008], [x + facing * 0.004, SHOULDER_Y, u + 0.008], [x + facing * 0.004, SHOULDER_Y, u - 0.008], 0x6a6f72, [facing, 0, 0]);
+  }
 }
 
-/** The bellows between two cars: pleats of dark rubber, and the bar that couples them. */
-function gangway(b: Batch, half: number): void {
-  for (let i = 0; i < 6; i++) {
+const BELLOWS_HALF = 0.72;
+const BELLOWS_TOP = FLOOR_Y + 2.2;
+const BELLOWS_FOOT = FLOOR_Y - 0.1;
+
+/**
+ * The bellows from the coach at x back across the gap to the coach before it: rubber folds between
+ * two steel mounting frames. No photograph shows them, since the slit hides them; they are sized to
+ * the door they surround, in the usual form for a metro gangway.
+ */
+function bellows(b: Batch, x: number): void {
+  const frame = 0.03;
+  const folds = 7;
+  const pitch = (GAP - frame * 2) / folds;
+  for (let i = 0; i < folds; i++) {
+    const inward = i % 2 ? 0.03 : 0;
+    const from = x - frame - pitch * (i + 1);
     b.part();
-    const gx = half + i * 0.034;
-    b.box(gx, FLOOR_Y - 0.1, -1.14 + (i % 2) * 0.03, gx + 0.022, ROOF_Y - 0.28, 1.14 - (i % 2) * 0.03, i % 2 ? 0x2c2f31 : 0x3f4345);
+    b.box(from + 0.004, BELLOWS_FOOT + inward, -BELLOWS_HALF + inward, from + pitch, BELLOWS_TOP - inward, BELLOWS_HALF - inward, i % 2 ? 0x24272a : 0x383c3f);
   }
+  for (const u of [x - frame, x - GAP]) {
+    const lip = 0.05;
+    b.part();
+    b.box(u, BELLOWS_FOOT - lip, -BELLOWS_HALF - lip, u + frame, BELLOWS_TOP + lip, BELLOWS_HALF + lip, 0x6d7275);
+  }
+}
+
+/** A coupler housing hung under the end of a car. */
+function draftGear(b: Batch, x: number, outward: number): void {
+  const inner = x - outward * 0.5;
   b.part();
-  b.box(half - 0.1, FLOOR_Y - 0.44, -0.12, half + 0.3, FLOOR_Y - 0.28, 0.12, 0x25282a);
+  b.box(Math.min(x, inner), FLOOR_Y - 0.5, -0.17, Math.max(x, inner), FLOOR_Y - 0.26, 0.17, 0x2c2f31);
+  // The end sill closing the underframe above it.
+  b.part();
+  b.box(Math.min(x, x - outward * 0.06), FLOOR_Y - 0.34, -HALF_WIDTH + 0.12, Math.max(x, x - outward * 0.06), FLOOR_Y - 0.26, HALF_WIDTH - 0.12, 0x3f4346);
+}
+
+/** A cable or hose looping down across the gap, from the car at x to the one before it. */
+function jumper(b: Batch, x: number, z: number, y: number, radius: number, color: number): void {
+  const droop = 0.16;
+  const points: Vec3[] = [
+    [x, y, z],
+    [x - GAP * 0.25, y - droop * 0.8, z],
+    [x - GAP * 0.75, y - droop * 0.8, z],
+    [x - GAP, y, z],
+  ];
+  b.part();
+  for (let i = 0; i + 1 < points.length; i++) b.bar(points[i]!, points[i + 1]!, radius, radius, color, 5);
+}
+
+/**
+ * The coupling under the gap: a bar with its joint collar, and the cables and air hoses that loop
+ * across. Too small and dark to make out in the photographs, so this follows ordinary EMU practice.
+ */
+function coupling(b: Batch, x: number): void {
+  b.part();
+  b.box(x - GAP, FLOOR_Y - 0.44, -0.07, x, FLOOR_Y - 0.32, 0.07, 0x25282a);
+  b.part();
+  b.box(x - GAP / 2 - 0.05, FLOOR_Y - 0.47, -0.11, x - GAP / 2 + 0.05, FLOOR_Y - 0.29, 0.11, 0x45494c);
+  for (const z of [0.34, 0.52, 0.7, 0.88]) jumper(b, x, z, FLOOR_Y - 0.3, 0.026, 0x17191b);
+  for (const z of [-0.36, -0.58]) jumper(b, x, z, FLOOR_Y - 0.32, 0.03, 0x2a2d2f);
 }
 
 const floorTop = FLOOR_Y;
@@ -565,7 +679,8 @@ function interiorShell(b: Batch, x0: number, x1: number, wheelchair: boolean): v
   b.quad([x0, floorTop + 0.003, 0.5], [x1, floorTop + 0.003, 0.5], [x1, floorTop + 0.003, -0.5], [x0, floorTop + 0.003, -0.5], c.aisle, [0, 1, 0]);
   const wallZ = -inside;
   const y0 = floorTop;
-  const y1 = ROOF_Y - 0.26;
+  // Just under the roof at this wall, or it would show above the far shoulder from outside.
+  const y1 = roofProfile(-inside / HALF_WIDTH) - 0.02;
   const panel = (a: number, d: number, v0: number, v1: number, color: number, out = 0): void => {
     if (d <= a || v1 <= v0) return;
     b.quad([a, v0, wallZ + out], [d, v0, wallZ + out], [d, v1, wallZ + out], [a, v1, wallZ + out], color, [0, 0, 1]);
@@ -606,7 +721,7 @@ function interiorShell(b: Batch, x0: number, x1: number, wheelchair: boolean): v
   panel(cursor, x1, y0, y1, c.wall);
   // The inside of the far end, so a window never looks through into the next car's back.
   b.part();
-  b.quad([x1 - 0.02, y0, -inside], [x1 - 0.02, y0, inside], [x1 - 0.02, y1, inside], [x1 - 0.02, y1, -inside], c.wall, [-1, 0, 0]);
+  b.as(Surface.interior, () => archedWall(b, x1 - 0.02, -1, y0, inside, c.wall));
   // Plain green benches, on both sides.
   for (const side of [-1, 1]) {
     const z = side * (inside - 0.26);
@@ -719,8 +834,8 @@ function ringStrap(b: Batch, x: number, y: number, z: number): void {
 function farCove(b: Batch, x0: number, x1: number, advert: (i: number) => TrainPrint): void {
   const wallZ = -INSIDE_HALF;
   const lowY = HEAD_Y + 0.04;
-  const highY = ROOF_Y - 0.1;
   const reach = 0.42;
+  const highY = roofProfile((wallZ + reach) / HALF_WIDTH) - 0.03;
   const facing: Vec3 = [0, -0.55, 0.83];
   const at = (u: number, t: number, out = 0): Vec3 => [u, lowY + (highY - lowY) * t + out * -0.55, wallZ + reach * t + out * 0.83];
   b.part();
@@ -831,29 +946,40 @@ function wheelchairBay(b: Batch, x0: number, x1: number): void {
   printed(b, "wheelchair", [(a + d) / 2 - 0.13, floorTop + 1.25, wallZ + 0.006], [(a + d) / 2 + 0.13, floorTop + 1.25, wallZ + 0.006], [(a + d) / 2 + 0.13, floorTop + 1.51, wallZ + 0.006], [(a + d) / 2 - 0.13, floorTop + 1.51, wallZ + 0.006], [0, 0, 1]);
 }
 
-/** The inside of the end wall the camera faces: a gangway door with its window, a screen over it. */
+/**
+ * The inside of the end wall the camera faces, proportioned from photographs of it: a stainless
+ * door in a dark jamb, its big round-cornered window lit by the next coach, a notice on the glass,
+ * handle and lock on the left, a small screen over it, and a sign on the panel to its right.
+ */
 function endWallInside(b: Batch, x: number): void {
   const px = x - 0.025;
+  const door = 0.48;
+  const top = floorTop + 2;
   b.part();
-  roundedPanel3(b, px, -0.5, 0.5, floorTop, floorTop + 2.02, 0.06, 0xbcc0c0);
+  b.quad([px, floorTop, -door - 0.03], [px, floorTop, door + 0.03], [px, top + 0.02, door + 0.03], [px, top + 0.02, -door - 0.03], GASKET, [-1, 0, 0]);
   b.part();
-  roundedPanel3(b, px - 0.004, -0.33, 0.33, floorTop + 0.82, floorTop + 1.84, 0.12, GASKET);
+  b.quad([px - 0.003, floorTop + 0.006, -door], [px - 0.003, floorTop + 0.006, door], [px - 0.003, top, door], [px - 0.003, top, -door], 0xa9aeae, [-1, 0, 0]);
   b.part();
-  roundedPanel3(b, px - 0.008, -0.3, 0.3, floorTop + 0.85, floorTop + 1.81, 0.1, 0x9bb6c0);
+  roundedPanel3(b, px - 0.006, -0.36, 0.36, floorTop + 0.84, floorTop + 1.89, 0.12, GASKET);
   b.part();
-  b.box(px - 0.05, floorTop + 0.95, 0.38, px - 0.004, floorTop + 1.12, 0.42, 0x54585a);
+  roundedPanel3(b, px - 0.009, -0.33, 0.33, floorTop + 0.87, floorTop + 1.86, 0.1, 0xd3dbd2);
+  b.part();
+  b.quad([px - 0.012, floorTop + 1.66, 0.02], [px - 0.012, floorTop + 1.66, 0.17], [px - 0.012, floorTop + 1.82, 0.17], [px - 0.012, floorTop + 1.82, 0.02], 0xeee8dc, [-1, 0, 0]);
+  // Handle above, lock below, by the door's left edge.
+  b.part();
+  b.box(px - 0.05, floorTop + 1.2, -door + 0.03, px - 0.003, floorTop + 1.32, -door + 0.07, 0x54585a);
+  b.part();
+  b.cylinder(px - 0.008, floorTop + 0.89, -door + 0.05, 0.022, 0.022, 0.004, 0x54585a, 8);
+  // The threshold plate the floor runs up to.
+  b.part();
+  b.quad([x - 0.17, floorTop + 0.004, door + 0.03], [px, floorTop + 0.004, door + 0.03], [px, floorTop + 0.004, -door - 0.03], [x - 0.17, floorTop + 0.004, -door - 0.03], 0x8f9496, [0, 1, 0]);
   // The screen over the door.
   b.part();
-  b.quad([px, floorTop + 2.1, -0.42], [px, floorTop + 2.1, 0.42], [px, floorTop + 2.44, 0.42], [px, floorTop + 2.44, -0.42], 0x14171a, [-1, 0, 0]);
+  b.quad([px, floorTop + 2.11, -0.23], [px, floorTop + 2.11, 0.23], [px, floorTop + 2.37, 0.23], [px, floorTop + 2.37, -0.23], 0x14171a, [-1, 0, 0]);
   b.part();
-  printed(b, "route", [px - 0.004, floorTop + 2.14, -0.38], [px - 0.004, floorTop + 2.14, 0.38], [px - 0.004, floorTop + 2.4, 0.38], [px - 0.004, floorTop + 2.4, -0.38], [-1, 0, 0]);
-  // The fire extinguisher's sign and its cupboard.
+  printed(b, "route", [px - 0.004, floorTop + 2.13, -0.21], [px - 0.004, floorTop + 2.13, 0.21], [px - 0.004, floorTop + 2.35, 0.21], [px - 0.004, floorTop + 2.35, -0.21], [-1, 0, 0]);
   b.part();
-  printed(b, "fire", [px - 0.002, floorTop + 1.62, -1.05], [px - 0.002, floorTop + 1.62, -0.81], [px - 0.002, floorTop + 1.86, -0.81], [px - 0.002, floorTop + 1.86, -1.05], [-1, 0, 0]);
-  b.part();
-  b.box(px - 0.04, floorTop + 0.62, -1.1, px, floorTop + 1.5, -0.76, 0xd6d3c8);
-  b.part();
-  b.box(px - 0.05, floorTop + 1.34, -1.08, px - 0.04, floorTop + 1.44, -0.78, 0xc23a33);
+  printed(b, "fire", [px - 0.002, floorTop + 1.98, 1.02], [px - 0.002, floorTop + 1.98, 1.24], [px - 0.002, floorTop + 2.2, 1.24], [px - 0.002, floorTop + 2.2, 1.02], [-1, 0, 0]);
 }
 
 /** roundedPanel, standing in the plane of an end wall and facing back down the car. */
@@ -954,18 +1080,31 @@ function interiorDetail(b: Batch, x0: number, x1: number, options: { wheelchair:
   farDoors(b, x0, x1);
   farCove(b, x0, x1, (i) => (["advert0", "advert1", "advert2", "advert3"] as const)[(i + options.advertOffset) % 4]!);
   if (options.wheelchair) wheelchairBay(b, x0, x1);
-  endWallInside(b, x1);
+  b.as(Surface.interior, () => endWallInside(b, x1));
 }
 
 /** The bulkhead behind the driver, which stays when the car is opened. */
 function cabBulkhead(b: Batch, tip: number, d: number): void {
   const wallX = tip - d * CAB_DEPTH;
-  b.part();
-  b.quad([wallX, floorTop, -INSIDE_HALF], [wallX, floorTop, INSIDE_HALF], [wallX, ROOF_Y - 0.26, INSIDE_HALF], [wallX, ROOF_Y - 0.26, -INSIDE_HALF], c.wall, [d, 0, 0]);
-  b.part();
-  b.quad([wallX + d * 0.01, floorTop, -0.42], [wallX + d * 0.01, floorTop, 0.42], [wallX + d * 0.01, floorTop + 1.95, 0.42], [wallX + d * 0.01, floorTop + 1.95, -0.42], c.door, [d, 0, 0]);
-  b.part();
-  b.quad([wallX + d * 0.02, floorTop + 1.1, -0.2], [wallX + d * 0.02, floorTop + 1.1, 0.2], [wallX + d * 0.02, floorTop + 1.75, 0.2], [wallX + d * 0.02, floorTop + 1.75, -0.2], c.glass, [d, 0, 0]);
+  const at = (out: number): number => wallX + d * out;
+  b.as(Surface.interior, () => {
+    b.part();
+    archedWall(b, wallX, d, floorTop, INSIDE_HALF, c.wall);
+    // The stainless door through to the passengers, hung on the right, with its window high up.
+    b.part();
+    b.quad([at(0.01), floorTop, -0.42], [at(0.01), floorTop, 0.42], [at(0.01), floorTop + 1.95, 0.42], [at(0.01), floorTop + 1.95, -0.42], 0xb4b8b8, [d, 0, 0]);
+    b.part();
+    b.quad([at(0.016), floorTop + 1.2, -0.28], [at(0.016), floorTop + 1.2, 0.28], [at(0.016), floorTop + 1.82, 0.28], [at(0.016), floorTop + 1.82, -0.28], GASKET, [d, 0, 0]);
+    b.part();
+    b.quad([at(0.02), floorTop + 1.23, -0.25], [at(0.02), floorTop + 1.23, 0.25], [at(0.02), floorTop + 1.79, 0.25], [at(0.02), floorTop + 1.79, -0.25], 0xd3dbd2, [d, 0, 0]);
+    b.part();
+    for (const y of [0.32, 1.62]) b.box(Math.min(at(0), at(0.05)), floorTop + y, 0.4, Math.max(at(0), at(0.05)), floorTop + y + 0.13, 0.5, 0x8a8f90);
+    b.part();
+    b.box(Math.min(at(0.01), at(0.06)), floorTop + 1, -0.38, Math.max(at(0.01), at(0.06)), floorTop + 1.04, -0.22, 0x54585a);
+    // The black board the crew pin their notices to.
+    b.part();
+    b.box(Math.min(at(0), at(0.03)), floorTop + 0.95, 0.66, Math.max(at(0), at(0.03)), floorTop + 1.72, 1.1, 0x1c1f22);
+  });
 }
 
 /** The driver's desk: two screens, the master controller, the side console and the seat. */
@@ -1026,18 +1165,28 @@ function cabDetail(b: Batch, tip: number, d: number): void {
 /** Builds a car's three levels of drawing. The local origin is the middle of the car at rail height. */
 export function buildCar({ cab, pantograph, women }: CarOptions): CarMeshes {
   const half = CAR_LENGTH / 2;
-  const noseAt = cab === "front" ? -half : cab === "rear" ? half : null;
+  const noseAt = cab === "front" ? -NOSE_AT : cab === "rear" ? NOSE_AT : null;
   const direction = cab === "rear" ? 1 : -1;
-  const bodyFrom = cab === "front" ? -half + CAB_DEPTH : -half;
-  const bodyTo = cab === "rear" ? half - CAB_DEPTH : half;
+  const bodyFrom = cab === "front" ? -NOSE_AT + CAB_DEPTH : -half;
+  const bodyTo = cab === "rear" ? NOSE_AT - CAB_DEPTH : half;
+  const carFrom = cab === "front" ? -NOSE_AT : -half;
+  const carTo = cab === "rear" ? NOSE_AT : half;
+  const ends: PlainEnds = { from: cab !== "front", to: cab !== "rear" };
 
   const fixed = new Batch(1 << 14);
-  underframe(fixed, -half, half);
+  underframe(fixed, carFrom, carTo);
   bogie(fixed, -BOGIE_OFFSET);
   bogie(fixed, BOGIE_OFFSET);
-  if (cab !== "front") endWall(fixed, -half, -1);
+  // Everything in the gap hangs off the coach behind it, and stays when either coach is opened.
+  if (ends.from) {
+    endWall(fixed, -half, -1);
+    bellows(fixed, -half);
+    draftGear(fixed, -half, -1);
+    coupling(fixed, -half);
+  }
+  if (ends.to) draftGear(fixed, half, 1);
   fixed.part();
-  fixed.quad([-half, FLOOR_Y - 0.26, HALF_WIDTH - 0.04], [half, FLOOR_Y - 0.26, HALF_WIDTH - 0.04], [half, FLOOR_Y, HALF_WIDTH - 0.04], [-half, FLOOR_Y, HALF_WIDTH - 0.04], 0x53585b, [0, 0, 1]);
+  fixed.quad([carFrom, FLOOR_Y - 0.26, HALF_WIDTH - 0.04], [carTo, FLOOR_Y - 0.26, HALF_WIDTH - 0.04], [carTo, FLOOR_Y, HALF_WIDTH - 0.04], [carFrom, FLOOR_Y, HALF_WIDTH - 0.04], 0x53585b, [0, 0, 1]);
   const wheelchair = cab !== "rear";
   interiorShell(fixed, bodyFrom, bodyTo, wheelchair);
   if (noseAt !== null) {
@@ -1054,22 +1203,27 @@ export function buildCar({ cab, pantograph, women }: CarOptions): CarMeshes {
   }
 
   const shell = new Batch(1 << 15);
-  bodySide(shell, bodyFrom, bodyTo, women);
+  bodySide(shell, bodyFrom, bodyTo, women, ends);
+  const flat0 = flatFrom(bodyFrom, ends);
+  const flat1 = flatTo(bodyTo, ends);
   shell.part();
-  roofSection(shell, bodyFrom, bodyTo, c.roof);
-  roofEquipment(shell, bodyFrom, bodyTo, pantograph);
-  if (noseAt !== null) cabNose(shell, noseAt, direction);
+  roofSection(shell, flat0, flat1, c.roof);
+  if (ends.from) roofEnd(shell, flat0, -1, c.roof);
+  if (ends.to) roofEnd(shell, flat1, 1, c.roof);
+  roofEquipment(shell, flat0, flat1, pantograph);
+  const cabin = cab === "front" ? new Batch(1 << 13) : null;
+  if (noseAt !== null) cabNose(cabin ?? shell, noseAt, direction);
   // Near benches' backs belong to the wall behind them, so they leave with it.
   for (const [u0, u1] of BENCHES) {
     if (u1 < bodyFrom || u0 > bodyTo) continue;
     shell.part();
     shell.box(Math.max(u0, bodyFrom), FLOOR_Y + SEAT_HEIGHT, INSIDE_HALF - 0.16, Math.min(u1, bodyTo), FLOOR_Y + SEAT_HEIGHT + 0.55, INSIDE_HALF - 0.06, c.seat);
   }
-  if (cab !== "rear") gangway(shell, half);
 
   return {
     fixed: fixed.finish(),
     shell: shell.finish(),
+    cabin: cabin?.finish() ?? null,
     detail: () => {
       const detail = new Batch(1 << 14);
       // Poles, rails and straps go to the line pass, which keeps them bright steel at any zoom.
