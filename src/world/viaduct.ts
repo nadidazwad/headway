@@ -97,6 +97,9 @@ function deckFittings(b: Batch, context: Context): void {
   }
 }
 
+/** Must match RIB in the fluted surface's shader: 90 ribs to a span puts one on every pier's centre line. */
+const FLUTE_PITCH = SPAN / 90;
+
 function pier(b: Batch, x: number, number: number): void {
   const w = 1.75;
   const shaftColor = concrete.pier;
@@ -110,16 +113,15 @@ function pier(b: Batch, x: number, number: number): void {
     [x + w - r, w], [x - w + r, w], [x - w, w - r], [x - w, -w + r],
   ];
   b.prism(outline, 0.28, PIER_TOP - 2.7, shaftColor);
-  // The fluted panel on each face, as on the real piers: ribs cast into a shallow recess.
+  // The ribbed band each real pier carries on its faces. The ribs are drawn by the shader, because
+  // modelled ones come out thinner than a pixel at the default view, and shimmer as the city slides.
   const panelTop = PIER_TOP - 3.1;
-  b.box(x - w * 0.62, 2.4, w, x + w * 0.62, panelTop, w + 0.012, 0xcbc6b9);
-  b.box(x - w - 0.012, 2.4, -w * 0.62, x - w, panelTop, w * 0.62, 0xbdb8ab);
-  b.part();
-  for (let i = -3; i <= 3; i++) {
-    const u = (i * w * 0.62) / 3.6;
-    b.box(x + u - 0.05, 2.5, w + 0.012, x + u + 0.05, panelTop - 0.1, w + 0.03, 0xd6d2c6);
-    b.box(x - w - 0.03, 2.5, u - 0.05, x - w - 0.012, panelTop - 0.1, u + 0.05, 0xc8c4b8);
-  }
+  const band = FLUTE_PITCH * 4;
+  const proud = 0.01;
+  b.as(Surface.fluted, () => {
+    b.quad([x - band, 1, w + proud], [x + band, 1, w + proud], [x + band, panelTop, w + proud], [x - band, panelTop, w + proud], shaftColor, [0, 0, 1]);
+    b.quad([x - w - proud, 1, -band], [x - w - proud, 1, band], [x - w - proud, panelTop, band], [x - w - proud, panelTop, -band], shaftColor, [-1, 0, 0]);
+  });
   // Flared head under the deck: octagon widening towards the bearing shelf.
   b.part();
   const levels: Array<[number, number, number]> = [

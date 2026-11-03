@@ -38,6 +38,8 @@ export const Surface = {
   bark: 10,
   /** People: their dark clothes and hair stay dark, where the city is lifted towards the paper. */
   figure: 11,
+  /** The ribbed band on a viaduct pier: drawn by the shader, so it can fade before it aliases. */
+  fluted: 12,
 } as const;
 export type SurfaceKind = (typeof Surface)[keyof typeof Surface];
 
@@ -623,7 +625,7 @@ export class Batch {
       const [bx, bz] = outline[(i + 1) % count]!;
       const nx = (bz - az) * direction, nz = -(bx - ax) * direction;
       const length = Math.hypot(nx, nz) || 1;
-      this.quad([ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az], color, [-nx / length, 0, -nz / length]);
+      this.quad([ax, y0, az], [bx, y0, bz], [bx, y1, bz], [ax, y1, az], color, [nx / length, 0, nz / length]);
     }
     const triangles = ShapeUtils.triangulateShape(outline.map(([x, z]) => new Vector2(x, z)), []);
     this.growVertices(count);

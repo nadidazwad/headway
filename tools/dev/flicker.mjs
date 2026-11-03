@@ -1,11 +1,12 @@
 // Measures shimmer: slides the frozen city in sub-pixel steps on a real GPU, undoes the slide, and scores what still changes.
-// usage: flicker.mjs <out-prefix> [query] [steps] [metres] [gpu]   Prints a score per region and writes a heat map.
+// usage: flicker.mjs <out-prefix> [query] [steps] [metres] [gpu] [focus]   Prints a score per region and writes a heat map.
+// focus: "x0,y0,x1,y1;x0,y0,x1,y1" scores those screen rectangles together, to watch one thing such as the piers.
 import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PNG } from "pngjs";
-const [out, query = "seed=11&at=2085", stepsArg = "10", stepArg = "0.0713", gpu = "intel"] = process.argv.slice(2);
+const [out, query = "seed=11&at=2085", stepsArg = "10", stepArg = "0.0713", gpu = "intel", focusArg = ""] = process.argv.slice(2);
 const steps = +stepsArg, step = +stepArg, W = 1400, H = 1000, AZ = 35, EL = 23.5, VIEW = 62;
 const url = `http://127.0.0.1:5180/?notour=1&freeze=1&az=${AZ}&el=${EL}&w=${VIEW}&pr=1&${query}`;
 const pw = join(homedir(), ".cache/ms-playwright");
@@ -52,7 +53,8 @@ const blurred = stills.map(({ grey }) => {
 });
 const at = (i, x, y) => { const { sum } = blurred[i]; const x0 = x - B, y0 = y - B, x1 = x + B, y1 = y + B; return (sum[(y1 + 1) * (W + 1) + x1 + 1] - sum[y0 * (W + 1) + x1 + 1] - sum[(y1 + 1) * (W + 1) + x0] + sum[y0 * (W + 1) + x0]) / ((2 * B + 1) ** 2); };
 const heat = new PNG({ width: W, height: H });
-const regions = { all: [0, 0, W, H], upper: [0, 0, W, 330], middle: [0, 330, W, 660], lower: [0, 660, W, H] };
+const regions = { all: [[0, 0, W, H]], upper: [[0, 0, W, 330]], middle: [[0, 330, W, 660]], lower: [[0, 660, W, H]] };
+if (focusArg) regions.focus = focusArg.split(";").map((rect) => rect.split(",").map(Number));
 const totals = Object.fromEntries(Object.keys(regions).map((k) => [k, { sum: 0, n: 0, hot: 0 }]));
 const margin = Math.ceil(sx * step * steps) + B + 2;
 for (let y = margin; y < H - margin; y += 2) for (let x = margin; x < W - margin; x += 2) {
@@ -60,7 +62,7 @@ for (let y = margin; y < H - margin; y += 2) for (let x = margin; x < W - margin
   for (let i = 0; i < steps; i++) { const v = at(i, Math.min(W - B - 2, Math.max(B + 1, x + stills[i].dx)), Math.min(H - B - 2, Math.max(B + 1, y - stills[i].dy))); mean += v; sq += v * v; }
   mean /= steps;
   const std = Math.sqrt(Math.max(0, sq / steps - mean * mean));
-  for (const [k, [x0, y0, x1, y1]] of Object.entries(regions)) if (x >= x0 && x < x1 && y >= y0 && y < y1) { totals[k].sum += std; totals[k].n++; if (std > 2.5) totals[k].hot++; }
+  for (const [k, rects] of Object.entries(regions)) if (rects.some(([x0, y0, x1, y1]) => x >= x0 && x < x1 && y >= y0 && y < y1)) { totals[k].sum += std; totals[k].n++; if (std > 2.5) totals[k].hot++; }
   const v = Math.max(0, 255 - std * 45);
   for (const [ax, ay] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const o = ((y + ay) * W + x + ax) * 4; heat.data[o] = heat.data[o + 1] = heat.data[o + 2] = v; heat.data[o + 3] = 255; }
 }

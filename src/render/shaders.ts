@@ -156,6 +156,17 @@ float barkSurface(vec2 uv, float px) {
   return 1.0 + (wnoise(vec2(uv.x * 8.0, uv.y * 0.6), 1.0) - 0.5) * 0.16 * detail(0.06, px);
 }
 
+/**
+ * The ribs cast into a pier. Rounded and band-limited, they flatten to their average tone before
+ * they could alias, and a crisp groove only joins them when the camera is close enough to carry it.
+ */
+float flutedSurface(vec2 uv, float px) {
+  const float RIB = 20.0 / 90.0;
+  float wave = cos(uv.x * 6.2831853 / RIB);
+  float groove = 0.166 - smoothstep(0.72, 1.0, wave);
+  return 0.94 - 0.05 * wave * detail(RIB, px) + 0.14 * groove * detail(0.07, px);
+}
+
 float weathering(float kind, vec3 p, vec3 n) {
   if (kind < 0.5) return 1.0;
   vec3 an = abs(n);
@@ -175,6 +186,7 @@ float weathering(float kind, vec3 p, vec3 n) {
   if (k == 8) return vertical > 0.5 ? brickSurface(uv, px) : roofSurface(uv, px);
   if (k == 9) return tinSurface(uv, px);
   if (k == 10) return barkSurface(uv, px);
+  if (k == 12) return concreteSurface(uv, px, vertical) * flutedSurface(uv, px);
   return 1.0;
 }
 `;
