@@ -1,5 +1,5 @@
 import { Rng, hashSeed } from "../shared/rng";
-import { crossGreen, mainSignal, type SideStreet } from "../world/plan";
+import { HUMP_HALF, crossGreen, humpHeight, mainSignal, type SideStreet } from "../world/plan";
 
 /**
  * The road as a simulation, with no drawing in it. Every vehicle follows the one ahead with the
@@ -32,9 +32,11 @@ interface Spec {
   halts: number;
   /** How far past the stop line it dares to edge on red. */
   creep: number;
+  /** How fast it dares go over a speed breaker. */
+  hump: number;
 }
 
-const CAR: Omit<Spec, "length"> = { speed: [8.5, 12.5], accel: 1.6, brake: 2.8, headway: 1.0, standstill: 1.6, slots: [0, 1, 2], weave: 0.06, eagerness: 0.45, halts: 0, creep: 0.3 };
+const CAR: Omit<Spec, "length"> = { speed: [8.5, 12.5], accel: 1.6, brake: 2.8, headway: 1.0, standstill: 1.6, slots: [0, 1, 2], weave: 0.06, eagerness: 0.45, halts: 0, creep: 0.3, hump: 2.4 };
 
 export const SPECS: Record<Kind, Spec> = {
   sedan: { ...CAR, length: 4.4 },
@@ -42,18 +44,22 @@ export const SPECS: Record<Kind, Spec> = {
   hatch: { ...CAR, length: 4 },
   taxi: { ...CAR, length: 4.4, slots: [0, 1, 2, 3], halts: 0.02 },
   van: { ...CAR, length: 5, speed: [8, 11], slots: [0, 1, 2, 3] },
-  truck: { ...CAR, length: 7, speed: [6.5, 9], accel: 0.9, brake: 2.2, headway: 1.4, standstill: 2, eagerness: 0.9 },
+  truck: { ...CAR, length: 7, speed: [6.5, 9], accel: 0.9, brake: 2.2, headway: 1.4, standstill: 2, eagerness: 0.9, hump: 1.7 },
   delivery: { ...CAR, length: 6, speed: [7.5, 10], accel: 1.1, slots: [1, 2, 3], eagerness: 0.8 },
-  bus_town: { ...CAR, length: 10.5, speed: [7.5, 10.5], accel: 1.0, brake: 2.5, headway: 1.2, standstill: 2, slots: [1, 2, 3], eagerness: 0.7, halts: 0.07 },
-  cng: { length: 2.9, speed: [7, 10], accel: 1.4, brake: 3, headway: 0.7, standstill: 1.0, slots: [0, 1, 2, 3], weave: 0.22, eagerness: 0.12, halts: 0.03, creep: 1.6 },
-  bike: { length: 1.9, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4 },
-  rickshaw_fan: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2 },
-  rickshaw_cycle: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2 },
+  bus_town: { ...CAR, length: 10.5, speed: [7.5, 10.5], accel: 1.0, brake: 2.5, headway: 1.2, standstill: 2, slots: [1, 2, 3], eagerness: 0.7, halts: 0.07, hump: 1.6 },
+  cng: { length: 2.9, speed: [7, 10], accel: 1.4, brake: 3, headway: 0.7, standstill: 1.0, slots: [0, 1, 2, 3], weave: 0.22, eagerness: 0.12, halts: 0.03, creep: 1.6, hump: 2.6 },
+  bike: { length: 1.9, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4, hump: 3.2 },
+  rickshaw_fan: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
+  rickshaw_cycle: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
 };
 
 export const LANE_Z = [3.4, 6.4, 9.4, 12.1] as const;
 /** Where a stopped front bumper rests, back from the junction's edge, before any creeping. */
 const STOP_BACK = 1.4;
+/** How hard a driver brakes for a speed breaker they have seen coming, metres a second squared. */
+const HUMP_BRAKE = 1.3;
+/** Distance between axles as a share of a vehicle's length. */
+const WHEELBASE = 0.6;
 /** Main-road traffic eases off this close to a junction, signal or not. */
 const JUNCTION_SLOW = 9;
 /** The most a vehicle turns its nose while changing lanes or pulling in, radians. */
@@ -81,6 +87,10 @@ export interface Vehicle {
   dawdle: number;
   think: number;
   creep: number;
+  /** Rise over a speed breaker, and how far the nose is up: sprung, so it nods as it comes off. */
+  lift: number;
+  pitch: number;
+  pitchRate: number;
 }
 
 /** A vehicle crossing the main road along a side street, between the two kerbs and beyond. */
@@ -95,7 +105,36 @@ export interface Crosser {
   desired: number;
   readonly length: number;
   wobble: number;
+  lift: number;
+  pitch: number;
+  pitchRate: number;
 }
+
+interface Body {
+  lift: number;
+  pitch: number;
+  pitchRate: number;
+}
+
+/** Rides a body over any breakers: each axle follows the road, and the springs follow the axles. */
+function ride(body: Body, along: number, heading: number, length: number, crests: ReadonlyArray<number | null>, dt: number): void {
+  const reach = (WHEELBASE * length) / 2;
+  let front = 0;
+  let rear = 0;
+  for (const crest of crests) {
+    if (crest === null) continue;
+    front += humpHeight(along + heading * reach - crest);
+    rear += humpHeight(along - heading * reach - crest);
+  }
+  body.lift = (front + rear) / 2;
+  const target = Math.atan2(front - rear, reach * 2);
+  const step = Math.min(dt, 0.05);
+  body.pitchRate += (70 * (target - body.pitch) - 8 * body.pitchRate) * step;
+  body.pitch += body.pitchRate * step;
+}
+
+/** The fastest a driver would be going this far short of a breaker they mean to cross at `over`. */
+const humpLimit = (ahead: number, over: number): number => (ahead <= 0 ? over : Math.sqrt(over * over + 2 * HUMP_BRAKE * ahead));
 
 export interface Flow {
   readonly vehicles: readonly Vehicle[];
@@ -151,7 +190,7 @@ export function createFlow(options: FlowOptions): Flow {
     const spec = SPECS[kind];
     const desired = rng.range(spec.speed[0], spec.speed[1]);
     const z = zOf(direction, slot) + rng.range(-0.25, 0.25);
-    return { kind, direction, slot, s, v: desired * rng.range(0.6, 1), z, yaw: 0, length: spec.length, desired, zFrom: z, change: 1, changeTime: 1, wobble: rng.range(0, 100), halt: 0, pull: 0, dawdle: 0, think: rng.range(0, 2), creep: rng.range(0, spec.creep) };
+    return { kind, direction, slot, s, v: desired * rng.range(0.6, 1), z, yaw: 0, length: spec.length, desired, zFrom: z, change: 1, changeTime: 1, wobble: rng.range(0, 100), halt: 0, pull: 0, dawdle: 0, think: rng.range(0, 2), creep: rng.range(0, spec.creep), lift: 0, pitch: 0, pitchRate: 0 };
   };
 
   for (const direction of [1, -1] as const) {
@@ -168,6 +207,7 @@ export function createFlow(options: FlowOptions): Flow {
   }
 
   let junctions: SideStreet[] = [];
+  const crestsHere: Array<number | null> = [];
   let junctionsFrom = Infinity;
   let junctionsTo = -Infinity;
   const crossTimers = new Map<number, [number, number]>();
@@ -216,6 +256,9 @@ export function createFlow(options: FlowOptions): Flow {
     return { gap, closing };
   };
 
+  /** The breaker this carriageway meets on its way into a junction, if it has one. */
+  const crestOn = (j: SideStreet, direction: number): number | null => (direction > 0 ? j.humps.near : j.humps.far);
+
   const desiredNow = (vehicle: Vehicle): number => {
     if (vehicle.halt > 0) return 0;
     let desired = vehicle.desired;
@@ -225,6 +268,13 @@ export function createFlow(options: FlowOptions): Flow {
         desired *= 0.58;
         break;
       }
+    }
+    const front = vehicle.s + (vehicle.direction * vehicle.length) / 2;
+    for (const j of junctions) {
+      const crest = crestOn(j, vehicle.direction);
+      if (crest === null) continue;
+      const ahead = vehicle.direction * (crest - front);
+      if (ahead > -vehicle.length - HUMP_HALF && ahead < 45) desired = Math.min(desired, humpLimit(ahead, SPECS[vehicle.kind].hump));
     }
     return desired;
   };
@@ -355,7 +405,7 @@ export function createFlow(options: FlowOptions): Flow {
         const kind = rng.pick(CROSS_MIX);
         const spec = SPECS[kind];
         const desired = rng.range(spec.speed[0], spec.speed[1]) * 0.7;
-        crossers.push({ kind, junction: j.centre, heading, s: j.centre - heading * Math.min(1.8, j.half * 0.45), z: startZ, v: desired, desired, length: spec.length, wobble: rng.range(0, 100) });
+        crossers.push({ kind, junction: j.centre, heading, s: j.centre - heading * Math.min(1.8, j.half * 0.45), z: startZ, v: desired, desired, length: spec.length, wobble: rng.range(0, 100), lift: 0, pitch: 0, pitchRate: 0 });
       });
     }
     const go = new Map(junctions.map((j) => [j.centre, j.signal ? crossGreen(j, time) : gapAt(j, time)]));
@@ -379,10 +429,19 @@ export function createFlow(options: FlowOptions): Flow {
         gap = Math.max(0, toLine);
         closing = c.v;
       }
-      const a = idm(spec, c.v, c.desired, gap, closing);
+      const own = junctions.find((k) => k.centre === c.junction);
+      let wanted = c.desired;
+      const crests = own ? [own.humps.nearStreet, own.humps.farStreet] : [];
+      for (const crest of crests) {
+        if (crest === null) continue;
+        const ahead = c.heading * (crest - front);
+        if (ahead > -c.length - HUMP_HALF && ahead < 30) wanted = Math.min(wanted, humpLimit(ahead, spec.hump));
+      }
+      const a = idm(spec, c.v, wanted, gap, closing);
       c.v = Math.max(0, c.v + a * dt);
       const move = Math.min(c.v * dt, Math.max(0, gap - 0.15));
       c.z += c.heading * move;
+      ride(c, c.z, c.heading, c.length, crests, dt);
       // Without a light, a few go at once and then the main road gets its turn.
       const j = junctions.find((k) => k.centre === c.junction);
       if (j && !j.signal && toLine > 0 && toLine - move <= 0) {
@@ -458,6 +517,9 @@ export function createFlow(options: FlowOptions): Flow {
         const limit = MAX_YAW * Math.min(1, 4 / vehicle.length);
         const target = Math.max(-limit, Math.min(limit, Math.atan2(lateral, Math.max(vehicle.v, 2)))) * vehicle.direction;
         vehicle.yaw += (target - vehicle.yaw) * Math.min(1, dt * 5);
+        crestsHere.length = 0;
+        for (const j of junctions) crestsHere.push(crestOn(j, vehicle.direction));
+        ride(vehicle, vehicle.s, vehicle.direction, vehicle.length, crestsHere, dt);
         if (vehicle.s < from - 6 || vehicle.s > to + 40) {
           recycle(vehicle, from, to);
           vehicle.yaw = 0;

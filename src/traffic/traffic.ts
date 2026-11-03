@@ -134,13 +134,14 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
     return frustum.intersectsSphere(probe);
   };
 
-  const place = (kind: Kind, x: number, z: number, yaw: number, y = 0.03): void => {
+  const place = (kind: Kind, x: number, z: number, yaw: number, y: number, pitch: number): void => {
     if (!seen(x, 1, z)) return;
     const k = kindIndex.get(kind)!;
     const mesh = instanced[k]!;
     if (used[k]! >= mesh.instanceMatrix.count) return;
     dummy.position.set(x, y, z);
-    dummy.rotation.set(0, yaw, 0);
+    // The model's nose lies along -x, so a turn about z the other way lifts it.
+    dummy.rotation.set(0, yaw, -pitch);
     dummy.updateMatrix();
     mesh.setMatrixAt(used[k]!++, dummy.matrix);
   };
@@ -155,10 +156,10 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       const to = distance + AHEAD;
       flow.step(Math.min(dt, 0.1), clock, from, to);
       used.fill(0);
-      for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw);
+      for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw, 0.03 + v.lift, v.pitch);
       // The model's nose points along -x at rest; a crosser heading +z turns a quarter left.
       // Side streets meet the road at pavement height, so a crosser rises over the kerb onto them.
-      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, sideStreetY(c.z));
+      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, sideStreetY(c.z) + c.lift, c.pitch);
       instanced.forEach((mesh, k) => {
         mesh.count = used[k]!;
         mesh.instanceMatrix.needsUpdate = true;

@@ -1,5 +1,5 @@
 import { Rng, hashSeed } from "../shared/rng";
-import { CHUNK_LENGTH, SPAN } from "./layout";
+import { CHUNK_LENGTH, ROAD_HALF, SPAN } from "./layout";
 
 /**
  * Where the street is interrupted along one chunk: by a side street with its junction, or by a
@@ -15,6 +15,19 @@ export interface SideStreet {
   signal: boolean;
   /** Seconds into the signal cycle at time zero, so neighbouring junctions are out of step. */
   phase: number;
+  humps: Humps;
+}
+
+/**
+ * The speed breakers around a junction, or null where it has none. `near` and `far` are distances
+ * along the line on the main road's approach to it, each carriageway's own. `nearStreet` and
+ * `farStreet` are z positions on the side street, either side of the road.
+ */
+export interface Humps {
+  near: number | null;
+  far: number | null;
+  nearStreet: number | null;
+  farStreet: number | null;
 }
 
 export interface FootBridge {
@@ -40,7 +53,32 @@ export const AMBER = 2.5;
 /** Both ways red for a moment, so the junction empties before the other street moves. */
 export const ALL_RED = 2;
 
+/** A speed breaker's half-length along the road and its height, in metres. */
+export const HUMP_HALF = 0.75;
+export const HUMP_HEIGHT = 0.085;
+
+/** Height of the road above its level at this distance from a breaker's crest. */
+export function humpHeight(offset: number): number {
+  const u = Math.abs(offset) / HUMP_HALF;
+  if (u >= 1) return 0;
+  const c = Math.cos((u * Math.PI) / 2);
+  return HUMP_HEIGHT * c * c;
+}
+
 const SPANS = CHUNK_LENGTH / SPAN;
+
+/** From its own random stream, so adding breakers never moves anything else in the city. */
+function humpsFor(seed: number, index: number): Humps {
+  const rng = new Rng(hashSeed(seed, index, 0xb4ea));
+  const back = (): number => rng.range(6, 10);
+  const out = (): number => ROAD_HALF + rng.range(7, 12);
+  return {
+    near: rng.chance(0.62) ? back() : null,
+    far: rng.chance(0.62) ? back() : null,
+    nearStreet: rng.chance(0.72) ? out() : null,
+    farStreet: rng.chance(0.72) ? -out() : null,
+  };
+}
 
 export function chunkPlan(seed: number, index: number): ChunkPlan {
   const rng = new Rng(hashSeed(seed, index, 0x51de));
@@ -57,7 +95,13 @@ export function chunkPlan(seed: number, index: number): ChunkPlan {
       zebra: rng.chance(0.75),
       signal: rng.chance(half > 3.9 ? 0.55 : 0.25),
       phase: rng.range(0, SIGNAL_CYCLE),
+      humps: humpsFor(seed, index),
     };
+    // The approach humps are measured from where the junction really is.
+    const { centre } = sideStreet;
+    const { near, far } = sideStreet.humps;
+    if (near !== null) sideStreet.humps.near = centre - half - near;
+    if (far !== null) sideStreet.humps.far = centre + half + far;
   }
 
   let footBridge: FootBridge | null = null;

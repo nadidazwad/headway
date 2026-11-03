@@ -3,6 +3,7 @@ import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Context } from "./layout";
 import { tree } from "./nature";
+import { HUMP_HALF, humpHeight, type Humps } from "./plan";
 
 /** The stretch of main road under the viaduct, its median, kerbs and pavements. */
 /** `junctions` are the local x ranges where a side street meets the road and the median opens. */
@@ -104,6 +105,61 @@ export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean
       b.part();
       b.quad([x0 + 1, 0.035, z + 0.6], [x1 - 1, 0.035, z + 0.6], [x1 - 1, 0.035, z], [x0 + 1, 0.035, z], 0xeeebe0, [0, 1, 0]);
     }
+  }
+}
+
+const STRIPE = 0.7;
+const HUMP_PROFILE = [-1, -0.6, -0.25, 0, 0.25, 0.6, 1].map((u) => u * HUMP_HALF);
+
+/** A speed breaker across [from, to], painted in stripes. `point` maps along-the-traffic and across to the world. */
+function breaker(b: Batch, from: number, to: number, base: number, point: (offset: number, across: number, y: number) => Vec3, facingEnd: Vec3): void {
+  b.part();
+  const count = Math.max(1, Math.round((to - from) / STRIPE));
+  const width = (to - from) / count;
+  for (let i = 0; i < count; i++) {
+    const a = from + i * width;
+    const c = a + width;
+    const colour = i % 2 ? 0xf6f4ea : 0x2c2d30;
+    for (let k = 0; k + 1 < HUMP_PROFILE.length; k++) {
+      const o0 = HUMP_PROFILE[k]!;
+      const o1 = HUMP_PROFILE[k + 1]!;
+      const y0 = base + humpHeight(o0);
+      const y1 = base + humpHeight(o1);
+      b.quad(point(o0, a, y0), point(o1, a, y1), point(o1, c, y1), point(o0, c, y0), colour, [0, 1, 0]);
+    }
+  }
+  // The raised end, where a breaker stops short of the kerb.
+  for (let k = 0; k + 1 < HUMP_PROFILE.length; k++) {
+    const o0 = HUMP_PROFILE[k]!;
+    const o1 = HUMP_PROFILE[k + 1]!;
+    b.quad(point(o0, to, base), point(o1, to, base), point(o1, to, base + humpHeight(o1)), point(o0, to, base + humpHeight(o0)), 0x8a8b8d, facingEnd);
+  }
+}
+
+/** Every breaker a junction has: on the main road's approaches, and out along its side street. */
+export function buildBreakers(b: Batch, humps: Humps, toLocal: (distance: number) => number, x0: number, x1: number): void {
+  const road = 0.03;
+  const onRoad = (crest: number) => (offset: number, across: number, y: number): Vec3 => [crest + offset, y, across];
+  const warning = (crest: number, from: number, to: number): void => {
+    // Warning bars painted on the approach, across the carriageway.
+    for (const offset of [-1.7, -2.3, 1.7, 2.3]) {
+      b.quad([crest + offset - 0.09, road + 0.004, to], [crest + offset + 0.09, road + 0.004, to], [crest + offset + 0.09, road + 0.004, from], [crest + offset - 0.09, road + 0.004, from], 0xf2f0e6, [0, 1, 0]);
+    }
+  };
+  if (humps.near !== null) {
+    const crest = toLocal(humps.near);
+    breaker(b, MEDIAN_HALF + 0.2, ROAD_HALF - 0.12, road, onRoad(crest), [0, 0, 1]);
+    warning(crest, MEDIAN_HALF + 0.2, ROAD_HALF - 0.12);
+  }
+  if (humps.far !== null) {
+    const crest = toLocal(humps.far);
+    breaker(b, -ROAD_HALF + 0.12, -MEDIAN_HALF - 0.2, road, onRoad(crest), [0, 0, 1]);
+    warning(crest, -ROAD_HALF + 0.12, -MEDIAN_HALF - 0.2);
+  }
+  // Side streets lie at pavement height.
+  const onStreet = (crest: number) => (offset: number, across: number, y: number): Vec3 => [across, y, crest + offset];
+  for (const crest of [humps.nearStreet, humps.farStreet]) {
+    if (crest !== null) breaker(b, x0 + 0.2, x1 - 0.2, 0.215, onStreet(crest), [1, 0, 0]);
   }
 }
 

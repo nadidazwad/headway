@@ -5,7 +5,8 @@ import { SPECS, createFlow, type Flow, type Vehicle } from "./flow";
 const FROM = 0;
 const TO = 520;
 /** One junction in the middle of the window, its main-road light turning red at time zero. */
-const junction: SideStreet = { centre: 300, half: 4, zebra: true, signal: true, phase: MAIN_GREEN };
+const NO_HUMPS = { near: null, far: null, nearStreet: null, farStreet: null };
+const junction: SideStreet = { centre: 300, half: 4, zebra: true, signal: true, phase: MAIN_GREEN, humps: NO_HUMPS };
 
 function run(flow: Flow, seconds: number, start: number, each: (time: number) => void): void {
   for (let i = 0; i < seconds * 20; i++) {
@@ -27,6 +28,34 @@ const gapsAhead = (vehicles: readonly Vehicle[]): number[] => {
 };
 
 describe("traffic flow", () => {
+  it("slows for a speed breaker, tips its nose up going over, and gets back up to speed after", () => {
+    const crest = 292;
+    const street: SideStreet = { centre: 300, half: 4, zebra: false, signal: false, phase: 0, humps: { ...NO_HUMPS, near: crest } };
+    const flow = createFlow({ seed: 8, junctionsBetween: () => [street], from: FROM, to: TO, density: 0.5 });
+    let start = -40;
+    run(flow, 40, start, () => {});
+    start = 0;
+    let over = 0;
+    let noseUp = 0;
+    const approach: number[] = [];
+    run(flow, 40, start, () => {
+      for (const v of flow.vehicles) {
+        if (v.direction !== 1) continue;
+        const offset = v.s - crest;
+        if (Math.abs(offset) < 0.2) {
+          over++;
+          expect(v.v, v.kind).toBeLessThan(SPECS[v.kind].hump + 1.2);
+        }
+        if (v.pitch > 0.008) noseUp++;
+        if (offset < -60 && offset > -70 && v.kind === "sedan") approach.push(v.v);
+      }
+    });
+    expect(over).toBeGreaterThan(10);
+    expect(noseUp).toBeGreaterThan(0);
+    // Free of the breaker, cars are well above what they cross it at.
+    expect(Math.max(...approach)).toBeGreaterThan(SPECS.sedan.hump * 2);
+  });
+
   it("queues at a red light without anyone overlapping or running it, then moves off on green", () => {
     const flow = createFlow({ seed: 5, junctionsBetween: () => [junction], from: FROM, to: TO, density: 1.6 });
     // Drive for a while before the light turns, so the road is in motion.

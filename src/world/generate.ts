@@ -5,7 +5,7 @@ import { apartmentBlock, brickBlock, glassTower, stackedBlock, type Plot } from 
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, localX, type Context } from "./layout";
 import { BRIDGE_HALF, STAIR_RUN, chunkPlan } from "./plan";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
-import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
+import { buildRoad, buildSideStreet, buildStreetFurniture, buildBreakers } from "./street";
 import { buildViaduct } from "./viaduct";
 import { emptyLot } from "./lot";
 import { furnishPavements } from "./pavement";
@@ -131,7 +131,10 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
   if (junction) gaps.push([toLocal(junction.centre + junction.half), toLocal(junction.centre - junction.half)]);
   buildRoad(street, context, rng, gaps);
   buildViaduct(b, context);
-  if (junction) buildSideStreet(street, gaps[0]![0], gaps[0]![1], junction.zebra, rng);
+  if (junction) {
+    buildSideStreet(street, gaps[0]![0], gaps[0]![1], junction.zebra, rng);
+    buildBreakers(street, junction.humps, toLocal, gaps[0]![0], gaps[0]![1]);
+  }
 
   // What keeps the pavement clear on each side: the junction, and a bridge's stair and columns.
   const blocked: Array<{ from: number; to: number; side: 0 | 1 | -1 }> = gaps.map(([a, c]) => ({ from: a - 3, to: c + 3, side: 0 }));
