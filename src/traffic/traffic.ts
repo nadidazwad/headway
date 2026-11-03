@@ -31,6 +31,11 @@ const PER_FRAME_POOL = 14;
 const WALK_INNER = ROAD_HALF + 1.45;
 const WALK_OUTER = ROAD_HALF + 2.4;
 
+const sideStreetY = (z: number): number => {
+  const t = Math.min(1, Math.max(0, (Math.abs(z) - (ROAD_HALF - 0.9)) / 1.8));
+  return 0.03 + 0.19 * t * t * (3 - 2 * t);
+};
+
 /** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
 function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
   const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
@@ -129,12 +134,12 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
     return frustum.intersectsSphere(probe);
   };
 
-  const place = (kind: Kind, x: number, z: number, yaw: number): void => {
+  const place = (kind: Kind, x: number, z: number, yaw: number, y = 0.03): void => {
     if (!seen(x, 1, z)) return;
     const k = kindIndex.get(kind)!;
     const mesh = instanced[k]!;
     if (used[k]! >= mesh.instanceMatrix.count) return;
-    dummy.position.set(x, 0.03, z);
+    dummy.position.set(x, y, z);
     dummy.rotation.set(0, yaw, 0);
     dummy.updateMatrix();
     mesh.setMatrixAt(used[k]!++, dummy.matrix);
@@ -152,7 +157,8 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       used.fill(0);
       for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw);
       // The model's nose points along -x at rest; a crosser heading +z turns a quarter left.
-      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2);
+      // Side streets meet the road at pavement height, so a crosser rises over the kerb onto them.
+      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, sideStreetY(c.z));
       instanced.forEach((mesh, k) => {
         mesh.count = used[k]!;
         mesh.instanceMatrix.needsUpdate = true;

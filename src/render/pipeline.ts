@@ -243,6 +243,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uForward!.value.setFromMatrixColumn(camera.matrixWorld, 2).negate();
       uFocus!.value.setFromMatrixPosition(camera.matrixWorld).addScaledVector(uForward!.value, focusDepth);
       const t0 = performance.now();
+      shadows.prepare(renderer);
       timer.begin("shadow");
       if (shadow) shadows.render(renderer, scene, camera, shadow);
       else shadows.uniforms.uShadowOn.value = 0;

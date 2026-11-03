@@ -72,6 +72,12 @@ export interface ShadowFrame {
 
 export interface Shadows {
   uniforms: ShadowUniforms;
+  /**
+   * Gives every map real contents once. Until a depth target has been drawn into, its texture does
+   * not exist on the GPU, and any draw whose shader samples it fails: so this must run before the
+   * first frame, shadows on or off.
+   */
+  prepare(renderer: WebGLRenderer): void;
   render(renderer: WebGLRenderer, scene: Scene, view: OrthographicCamera, frame: ShadowFrame): void;
   enabled: boolean;
   /** Triangles drawn into the static maps this frame, for the frame-time budget. */
@@ -303,9 +309,19 @@ export function createShadows(options: { staticSize: readonly [number, number]; 
   const slide = new Matrix4();
   const usable = (map: StaticMap, distance: number): boolean => distance >= map.reference && distance - map.reference <= STATIC_LIFE;
 
+  let prepared = false;
   const shadows: Shadows = {
     uniforms,
     enabled: true,
+    prepare(renderer) {
+      if (prepared) return;
+      prepared = true;
+      for (const target of [maps[0].target, maps[1].target, dynamic.target]) {
+        renderer.setRenderTarget(target);
+        renderer.clear(false, true, false);
+      }
+      renderer.setRenderTarget(null);
+    },
     get staticTriangles() {
       return staticTriangles;
     },

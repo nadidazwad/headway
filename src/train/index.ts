@@ -1,4 +1,5 @@
 export { createTrain, type Train, type TrainCar, CAR_THEMES } from "./train";
+export { createRiders, type Riders } from "./riders";
 export {
   BENCHES,
   CAB_DEPTH,

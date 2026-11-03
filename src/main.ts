@@ -8,8 +8,8 @@ import { Rng, hashSeed } from "./shared/rng";
 import { createAtlas } from "./signs/atlas";
 import { nextThought, operatorFor, rosterFor, type Passenger } from "./thoughts";
 import { createTraffic } from "./traffic";
-import { CAB_DEPTH, TRAIN_LENGTH, createTrain, type TrainCar } from "./train";
-import { createOverlay } from "./ui";
+import { CAB_DEPTH, TRAIN_LENGTH, createRiders, createTrain, type TrainCar } from "./train";
+import { createOverlay, type Point } from "./ui";
 import { RAIL_Y, TRACK_Z, createWorld } from "./world";
 
 const params = new URLSearchParams(location.search);
@@ -42,7 +42,10 @@ scene.add(traffic.group);
 let opposingX = -700;
 
 const WIDE_WIDTH = (): number => (innerWidth / innerHeight > 1.2 ? 62 : 46);
-const wideFocus = new Vector3(TRAIN_LENGTH * 0.28, RAIL_Y - 5, 0);
+/** On a tall screen the view holds the cab and the coaches behind it, not the middle of the train. */
+const wideFocus = new Vector3();
+const placeWideFocus = (): Vector3 => wideFocus.set(innerWidth / innerHeight < 1 ? 15 : TRAIN_LENGTH * 0.28, RAIL_Y - 5, 0);
+placeWideFocus();
 /** Measured from the reference film by solving its two families of parallel lines. */
 const FILM_AZIMUTH = 35;
 const FILM_ELEVATION = 23.5;
@@ -80,7 +83,11 @@ function resize(): void {
   pipeline.setPixelRatio(quality.ratio);
   pipeline.resize(innerWidth, innerHeight);
 }
-window.addEventListener("resize", resize);
+window.addEventListener("resize", () => {
+  resize();
+  placeWideFocus();
+  if (!focused) aim.focus.copy(wideFocus);
+});
 resize();
 
 /** Trades sharpness for smoothness, then wins it back. Runs on measured frame times only. */
@@ -123,28 +130,8 @@ const crews: Passenger[][] = train.cars.map((car) => {
   return car.index === 0 ? [...roster, operatorFor(assets, seed)] : roster;
 });
 
-/** Every coach keeps a light crew for looking in through the windows, and a detailed one for looking at. */
-const riderMeshes = train.cars.map((car) => {
-  const build = (lod: "hi" | "lo"): Mesh => {
-    const batch = new Batch(1 << 13);
-    for (const person of crews[car.index]!) {
-      batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, lod)), person.facing);
-    }
-    const mesh = new Mesh(toBufferGeometry(batch.finish()), pipeline.solid);
-    mesh.frustumCulled = false;
-    car.riders.add(mesh);
-    return mesh;
-  };
-  const lo = build("lo");
-  let hi: Mesh | null = null;
-  return {
-    show(detailed: boolean): void {
-      if (detailed && !hi) hi = build("hi");
-      lo.visible = !detailed;
-      if (hi) hi.visible = detailed;
-    },
-  };
-});
+/** Every coach keeps a light crew for looking in through the windows, and a detailed, moving one for when it is opened. */
+const riders = train.cars.map((car) => createRiders(car, crews[car.index]!, assets, pipeline.solid, seed));
 
 // A second set on the other track carries no one close enough to see, only its light crew.
 opposing.cars.forEach((car, index) => {
@@ -228,7 +215,8 @@ const targetAt = (px: number, py: number): Target | null => {
 };
 
 const carFocus = (target: Target): Vector3 => new Vector3((target.x0 + target.x1) / 2, RAIL_Y + 2.45, TRACK_Z - 0.3);
-const carWidth = (target: Target): number => (target.index === 0 ? 8.5 : 17) * (innerWidth / innerHeight < 1 ? 0.8 : 1);
+/** Wide enough to hold the whole coach; a tall screen needs more, since it shows less across. */
+const carWidth = (target: Target): number => (target.index === 0 ? 8.5 : 17) * (innerWidth / innerHeight < 1 ? 1.3 : 1);
 
 /** The wheel's zoom and the click's glide both act on where the camera is heading. */
 const aim = {
@@ -317,7 +305,24 @@ canvas.addEventListener("click", (event) => {
     orbit.wasDrag = false;
     return;
   }
-  focusOn(targetAt(event.clientX, event.clientY));
+  const under = targetAt(event.clientX, event.clientY);
+  // In an open coach a click on someone brings up what they are thinking; a click on empty
+  // floor or seats takes the camera back out. Anywhere else, the click picks what to open.
+  if (focused && under === focused) {
+    const { origin, direction } = rig.ray(event.clientX, event.clientY, innerWidth, innerHeight);
+    const { hit, passenger } = riders[focused.car.index]!.pick(origin, direction);
+    if (hit) {
+      if (passenger?.thought && focused.speakers().includes(passenger)) {
+        openBubbleId = passenger.id;
+        bubbleTimer = 0;
+        overlay.openBubble(passenger.id);
+      }
+      return;
+    }
+    focusOn(null);
+    return;
+  }
+  focusOn(under);
 });
 canvas.addEventListener(
   "wheel",
@@ -398,13 +403,6 @@ function drawWire(target: Target): void {
   overlay.setWire(edges);
 }
 
-/** The coach in the middle of a close view opens by itself: zooming in is peeking in. */
-function targetInView(): Target | null {
-  if (aim.width > 34) return null;
-  const centreX = rig.target.focus.x;
-  return targets.find((t) => t.index > 0 && centreX >= t.x0 && centreX < t.x1) ?? (centreX < CAB_END ? targets[0]! : null);
-}
-
 function updateHover(dt: number): void {
   if (pointer.inside && !tour.running && !orbit.holding) {
     const under = targetAt(pointer.x, pointer.y);
@@ -420,20 +418,17 @@ function updateHover(dt: number): void {
   }
   hoverTime += dt;
 
-  const inView = targetInView();
-  const peeking = hovered && hoverTime > 0.14 ? hovered : null;
-  const opening = new Set<number>();
-  for (const candidate of [focused, peeking, inView]) if (candidate) opening.add(candidate.car.index);
+  // Only a click opens a coach: hovering names it, zooming only zooms.
   const rate = reducedMotion ? 100 : 3.4;
   for (const car of train.cars) {
-    const goal = opening.has(car.index) ? 1 : 0;
+    const goal = focused?.car === car ? 1 : 0;
     car.openness += (goal - car.openness) * (1 - Math.exp(-rate * dt));
     if (Math.abs(goal - car.openness) < 0.002) car.openness = goal;
-    riderMeshes[car.index]!.show(car.openness > 0.01 && aim.width < 75);
+    riders[car.index]!.show(car.openness > 0.01);
   }
 
-  // Thoughts belong to the coach you are closest to looking at.
-  const showing = focused ?? inView ?? (aim.width < 40 ? peeking : null);
+  // Thoughts belong to the coach that is open.
+  const showing = focused;
   if (showing !== shownBubbles) {
     shownBubbles = showing;
     const list = showing ? showing.speakers() : [];
@@ -464,16 +459,49 @@ function updateCameraAim(time: number): void {
   target.elevation = debugNumber("el") ?? clamp(elevation, ELEVATION_LIMITS);
 }
 
+const planeA = { x: 0, y: 0 };
+const planeB = { x: 0, y: 0 };
+const planeC = { x: 0, y: 0 };
+/** Lays every card in the plane of the coach's side, as the film does: along the track and upright. */
+function updatePlane(): void {
+  point.set(TRAIN_LENGTH / 2, RAIL_Y + 3, TRACK_Z);
+  rig.screenPosition(point, planeA, innerWidth, innerHeight);
+  point.x += 1;
+  rig.screenPosition(point, planeB, innerWidth, innerHeight);
+  point.x -= 1;
+  point.z -= 1;
+  rig.screenPosition(point, planeC, innerWidth, innerHeight);
+  const ax = planeB.x - planeA.x;
+  const ay = planeB.y - planeA.y;
+  const length = Math.hypot(ax, ay) || 1;
+  // A card stands a few centimetres thick; its back shows past its top and left edges.
+  const thickness = Math.min(9, Math.max(4, 0.12 * (innerWidth / rig.width)));
+  const bx = planeC.x - planeA.x;
+  const by = planeC.y - planeA.y;
+  const back = Math.hypot(bx, by) || 1;
+  overlay.setPlane(ax / length, ay / length, (bx / back) * thickness, (by / back) * thickness);
+}
+
 function updateTags(dt: number): void {
+  updatePlane();
   const labelled = hovered && (!focused || hovered !== focused) ? hovered : null;
   if (labelled) {
     drawWire(labelled);
-    point.set((labelled.x0 + labelled.x1) / 2, labelled.car.bounds.max.y + 0.2, TRACK_Z);
-    rig.screenPosition(point, screen, innerWidth, innerHeight);
-    overlay.setCallout({ index: labelled.index, theme: labelled.theme }, screen.x, screen.y);
+    // The card may stand anywhere along the roof, or under the floor if there is no room above.
+    const { min, max } = labelled.car.bounds;
+    const ends = [labelled.x0 + 1, labelled.x1 - 1];
+    const roof = ends.map((x) => {
+      rig.screenPosition(point.set(x, max.y + 0.2, TRACK_Z), screen, innerWidth, innerHeight);
+      return { x: screen.x, y: screen.y };
+    }) as [Point, Point];
+    const floor = ends.map((x) => {
+      rig.screenPosition(point.set(x, min.y - 0.1, max.z), screen, innerWidth, innerHeight);
+      return { x: screen.x, y: screen.y };
+    }) as [Point, Point];
+    overlay.setCallout({ index: labelled.index, theme: labelled.theme }, roof, floor);
   } else {
     overlay.setWire(null);
-    overlay.setCallout(null, 0, 0);
+    overlay.setCallout(null);
   }
   if (!shownBubbles) return;
   const car = shownBubbles.car;
@@ -501,19 +529,22 @@ function updateTags(dt: number): void {
 
 let last = performance.now();
 const frozen = debug && params.has("freeze");
+/** Dev: the train stays put and the world around it keeps living, for watching one junction. */
+const held = debug && params.has("hold");
 
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const time = now / 1000;
   const moving = !frozen && !reducedMotion;
-  if (moving) distance += CRUISE * dt;
+  if (moving && !held) distance += CRUISE * dt;
 
   world.update(distance, 320, 260);
   train.update(time, distance);
 
   runTour(now);
   updateHover(dt);
+  for (const crew of riders) crew.update(time, moving ? dt : 0);
   updateCameraAim(time);
   rig.update(reducedMotion ? 1 : dt, innerWidth / innerHeight);
   world.cull(rig.camera);
@@ -551,6 +582,15 @@ if (debug) {
       ready: () => world.whenReady(),
       skip(metres: number) {
         distance += metres;
+      },
+      /** Where a world point lands on screen, as fractions of the canvas, for driving clicks in tests. */
+      screenOf(x: number, y: number, z: number) {
+        const out = { x: 0, y: 0 };
+        rig.screenPosition(new Vector3(x, y, z), out, innerWidth, innerHeight);
+        return [out.x / innerWidth, out.y / innerHeight];
+      },
+      get focused() {
+        return focused?.index ?? null;
       },
     },
   });

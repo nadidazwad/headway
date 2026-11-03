@@ -4,10 +4,10 @@ import { Rng, hashSeed } from "../shared/rng";
 import { apartmentBlock, brickBlock, glassTower, stackedBlock, type Plot } from "./buildings";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, localX, type Context } from "./layout";
 import { BRIDGE_HALF, STAIR_RUN, chunkPlan } from "./plan";
-import { palm, tree } from "./nature";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
 import { buildViaduct } from "./viaduct";
+import { emptyLot } from "./lot";
 import { furnishPavements } from "./pavement";
 
 export interface ChunkData {
@@ -96,15 +96,9 @@ function fillRow(pieces: Pieces, assets: Assets, rng: Rng, x0: number, x1: numbe
       // A real downloaded tower block standing among the generated ones.
     } else if (roll > 0.93 && plot.lod === 0 && width > 12) {
       pond(b, plot, rng);
-    } else if (roll < 0.05 && plot.lod === 0) {
-      // An empty lot: a tree or two, a few palms. There is always one nearby.
-      const trees = rng.int(1, 3);
-      for (let i = 0; i < trees; i++) {
-        const tx = rng.range(plot.x0 + 2, plot.x1 - 2);
-        const tz = rng.range(plot.z0 + 2, plot.z1 - 2);
-        if (rng.chance(0.5)) palm(b, tx, tz, rng.range(7, 11), rng);
-        else tree(b, tx, tz, rng.range(7, 12), rng);
-      }
+    } else if (roll < 0.08 && plot.lod <= 1) {
+      // An empty lot, walled and gated, or a playing field behind a grille.
+      emptyLot(b, assets, plot, rng);
     } else if (z0 < -40 && distance > 45 && roll < 0.36 && plot.maxHeight > 40) {
       glassTower(b, plot, rng);
     } else if (roll > 0.72 && plot.maxHeight > 16) {
