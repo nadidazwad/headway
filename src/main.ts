@@ -38,7 +38,7 @@ const OPPOSING_SPEED = 13.5;
 let distance = debugNumber("at") ?? 4000 + (seed % 5000);
 let opposingX = -700;
 
-const WIDE_WIDTH = (): number => (innerWidth / innerHeight > 1.2 ? 78 : 52);
+const WIDE_WIDTH = (): number => (innerWidth / innerHeight > 1.2 ? 62 : 46);
 const wideFocus = new Vector3(TRAIN_LENGTH * 0.28, RAIL_Y - 5, 0);
 /** Measured from the reference film by solving its two families of parallel lines. */
 const FILM_AZIMUTH = 35;
@@ -227,12 +227,10 @@ const carWidth = (target: Target): number => (target.index === 0 ? 8.5 : 17) * (
 const aim = {
   width: rig.target.width,
   focus: wideFocus.clone(),
-  roaming: false,
 };
 
 function focusOn(target: Target | null): void {
   focused = target;
-  aim.roaming = target !== null;
   if (target) {
     aim.width = carWidth(target);
     aim.focus.copy(carFocus(target));
@@ -247,9 +245,8 @@ const up = new Vector3();
 
 function zoomAt(px: number, py: number, factor: number): void {
   const before = aim.width;
-  const after = Math.min(190, Math.max(7.5, before * factor));
+  const after = Math.min(130, Math.max(7.5, before * factor));
   if (after === before) return;
-  aim.roaming = true;
   // Keep what is under the mouse under the mouse, which is the only way to travel down the train.
   const aspect = innerWidth / innerHeight;
   const offsetX = (px / innerWidth - 0.5) * before;
@@ -272,7 +269,7 @@ const DRAG_DEGREES_PER_PIXEL = 0.16;
 const clamp = (value: number, [low, high]: readonly [number, number]): number => Math.min(high, Math.max(low, value));
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || event.pointerType === "touch") return;
+  if (event.button !== 0) return;
   orbit.holding = true;
   orbit.moved = 0;
   orbit.wasDrag = false;
@@ -313,8 +310,7 @@ canvas.addEventListener("click", (event) => {
     orbit.wasDrag = false;
     return;
   }
-  const target = targetAt(event.clientX, event.clientY);
-  focusOn(target && target !== focused ? target : target === focused && target ? target : null);
+  focusOn(targetAt(event.clientX, event.clientY));
 });
 canvas.addEventListener(
   "wheel",
@@ -334,6 +330,7 @@ canvas.addEventListener("touchend", () => {
 canvas.addEventListener("touchmove", (event) => {
   if (event.touches.length !== 2) return;
   event.preventDefault();
+  orbit.holding = false;
   const [a, b] = [event.touches[0]!, event.touches[1]!];
   const gap = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   if (pinch > 0) zoomAt((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2, pinch / gap);
@@ -425,11 +422,11 @@ function updateHover(dt: number): void {
     const goal = opening.has(car.index) ? 1 : 0;
     car.openness += (goal - car.openness) * (1 - Math.exp(-rate * dt));
     if (Math.abs(goal - car.openness) < 0.002) car.openness = goal;
-    riderMeshes[car.index]!.show(car.openness > 0.01 && aim.width < 60);
+    riderMeshes[car.index]!.show(car.openness > 0.01 && aim.width < 75);
   }
 
   // Thoughts belong to the coach you are closest to looking at.
-  const showing = focused ?? inView ?? (aim.width < 60 ? peeking : null) ?? peeking;
+  const showing = focused ?? inView ?? (aim.width < 40 ? peeking : null);
   if (showing !== shownBubbles) {
     shownBubbles = showing;
     const list = showing ? showing.speakers() : [];
@@ -535,6 +532,19 @@ requestAnimationFrame(frame);
 
 if (debug) {
   Object.assign(window, {
-    __metro: { world, rig, pipeline, train, seed, focusOn, targets, aim, ready: () => world.whenReady() },
+    __metro: {
+      world,
+      rig,
+      pipeline,
+      train,
+      seed,
+      focusOn,
+      targets,
+      aim,
+      ready: () => world.whenReady(),
+      skip(metres: number) {
+        distance += metres;
+      },
+    },
   });
 }

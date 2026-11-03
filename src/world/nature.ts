@@ -20,14 +20,14 @@ function parasol(b: Batch, x: number, y: number, z: number, r: number, h: number
 /** A wide rain tree or, now and then, a krishnachura: overlapping parasols on a forked trunk. */
 export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, detail = true): void {
   const blossom = rng.chance(0.14);
-  const leaves = blossom ? [0xcfcfc8, 0xdedad0, 0xc2c1b9] : [0xbfc3b6, 0xa9ae9f, 0xd2d4c8];
+  const leaves = blossom ? [0xc4c4bc, 0xd4d1c8, 0xb8b7af] : [0xaeb2a5, 0x9ca194, 0xbfc2b5];
   b.part();
   const forkY = height * 0.46;
   const forkX = x + rng.range(-0.3, 0.3);
   const forkZ = z + rng.range(-0.3, 0.3);
   b.bar([x, 0, z], [forkX, forkY, forkZ], height * 0.04, height * 0.026, city.bark, 7);
   const spread = height * 0.46;
-  const crowns = detail ? rng.int(4, 6) : 2;
+  const crowns = detail ? rng.int(6, 9) : 3;
   for (let i = 0; i < crowns; i++) {
     const angle = (i / crowns) * Math.PI * 2 + rng.range(-0.4, 0.4);
     const radius = i === 0 ? 0 : spread * rng.range(0.42, 0.68);
@@ -38,7 +38,7 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, d
       b.part();
       b.bar([forkX, forkY, forkZ], [cx, y - 0.2, cz], height * 0.018, height * 0.01, city.bark, 5);
     }
-    parasol(b, cx, y, cz, spread * rng.range(0.58, 0.8) * (i === 0 ? 1.1 : 1), height * 0.17, leaves[i % leaves.length]!, rng.range(0, 6));
+    parasol(b, cx, y, cz, spread * rng.range(0.4, 0.56) * (i === 0 ? 1.2 : 1), height * 0.14, leaves[i % leaves.length]!, rng.range(0, 6));
   }
 }
 

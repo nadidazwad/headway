@@ -1,7 +1,7 @@
 import type { Batch, Vec3 } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, latticeIn, localX, type Context } from "./layout";
+import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Context } from "./layout";
 import { tree } from "./nature";
 
 /** The stretch of main road under the viaduct, its median, kerbs and pavements. */
@@ -44,26 +44,19 @@ function kerbStripes(b: Batch, context: Context, z: number, top: number, height:
 }
 
 function buildMedian(b: Batch, context: Context): void {
-  kerbStripes(b, context, MEDIAN_HALF, 0.28, 0);
-  kerbStripes(b, context, -MEDIAN_HALF, 0.28, 0);
   b.part();
   b.box(-CHUNK_LENGTH, 0, -MEDIAN_HALF, 0, 0.26, MEDIAN_HALF, city.soil);
-  // A low clipped hedge along the median, as under the real viaduct.
-  for (const distance of latticeIn(context, 1.6)) {
-    const x = localX(context, distance);
-    const nearPier = ((distance % 30) + 30) % 30 < 3 || ((distance % 30) + 30) % 30 > 27;
-    if (nearPier) continue;
+  // A low clipped hedge along the median, as under the real viaduct, broken only at each pier.
+  const piersHere = latticeIn(context, SPAN).map((distance) => localX(context, distance));
+  const edges = [-CHUNK_LENGTH, ...piersHere.flatMap((x) => [x - 3.2, x + 3.2]).sort((a, c) => a - c), 0];
+  for (let i = 0; i + 1 < edges.length; i += 2) {
+    const from = Math.max(edges[i]!, -CHUNK_LENGTH);
+    const to = Math.min(edges[i + 1]!, 0);
+    if (to <= from) continue;
     b.part();
-    b.box(x - 0.7, 0.26, 0.45, x + 0.7, 0.72, 1.15, 0xcfd2c6);
+    b.box(from, 0.26, 0.5, to, 0.7, 1.1, 0xd6d8ce);
     b.part();
-    b.box(x - 0.7, 0.26, -1.15, x + 0.7, 0.72, -0.45, 0xc6cabc);
-  }
-  // Iron rail along the near kerb.
-  for (const distance of latticeIn(context, 3)) {
-    const x = localX(context, distance);
-    b.part();
-    b.box(x - 0.02, 0.28, 1.3, x + 0.02, 1.02, 1.34, 0xa4a8a6);
-    b.box(x - 3, 0.96, 1.305, x, 1, 1.335, 0xb2b6b4);
+    b.box(from, 0.26, -1.1, to, 0.7, -0.5, 0xcfd2c6);
   }
 }
 

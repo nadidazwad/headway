@@ -33,7 +33,7 @@ export const city = {
   road: 0xd3d1cb,
   roadLine: 0xf7f6f0,
   kerbLight: 0xefece2,
-  kerbDark: 0x8d8e8c,
+  kerbDark: 0xa9aaa6,
   median: 0xcfd0c6,
   soil: 0xb9b6ac,
   frame: 0x4b4f4e,

@@ -1,0 +1,1 @@
+[["eval","const m=window.__metro; m.focusOn(m.targets[2]); m.train.cars[1].openness=1; m.rig.target.width=17; m.rig.target.azimuth=26; m.rig.target.elevation=27.5; m.rig.target.focus.copy(m.aim.focus); m.rig.snap(); 1"],["wait",8000]]

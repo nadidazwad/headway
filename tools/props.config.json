@@ -1,8 +1,40 @@
 {
 "props": [
 {
+"key": "cng",
+"file": "asset-src/sketchfab/cng/model.glb",
+"length": 2.9,
+"perPart": true,
+"lods": {
+"hi": 5000,
+"lo": 1800
+},
+"crease": 30,
+"rotate": [
+0,
+180,
+0
+]
+},
+{
+"key": "tuktuk",
+"file": "asset-src/sketchfab/auto_low/model.glb",
+"length": 2.9,
+"rotate": [
+0,
+-90,
+0
+],
+"lods": {
+"hi": 2500,
+"lo": 700
+},
+"error": 0.08,
+"crease": 30
+},
+{
 "key": "sedan",
-"file": "/tmp/cc0/car/Models/GLB format/sedan.glb",
+"file": "asset-src/kenney/car/Models/GLB format/sedan.glb",
 "length": 4.4,
 "lods": {
 "hi": 1800,
@@ -22,7 +54,7 @@
 },
 {
 "key": "suv",
-"file": "/tmp/cc0/car/Models/GLB format/suv.glb",
+"file": "asset-src/kenney/car/Models/GLB format/suv.glb",
 "length": 4.7,
 "lods": {
 "hi": 1800,
@@ -42,7 +74,7 @@
 },
 {
 "key": "hatch",
-"file": "/tmp/cc0/car/Models/GLB format/hatchback-sports.glb",
+"file": "asset-src/kenney/car/Models/GLB format/hatchback-sports.glb",
 "length": 4,
 "lods": {
 "hi": 1800,
@@ -62,7 +94,7 @@
 },
 {
 "key": "taxi",
-"file": "/tmp/cc0/car/Models/GLB format/taxi.glb",
+"file": "asset-src/kenney/car/Models/GLB format/taxi.glb",
 "length": 4.4,
 "lods": {
 "hi": 1800,
@@ -82,7 +114,7 @@
 },
 {
 "key": "van",
-"file": "/tmp/cc0/car/Models/GLB format/van.glb",
+"file": "asset-src/kenney/car/Models/GLB format/van.glb",
 "length": 5,
 "lods": {
 "hi": 1800,
@@ -102,7 +134,7 @@
 },
 {
 "key": "truck",
-"file": "/tmp/cc0/car/Models/GLB format/truck.glb",
+"file": "asset-src/kenney/car/Models/GLB format/truck.glb",
 "length": 7,
 "lods": {
 "hi": 1800,
@@ -122,7 +154,7 @@
 },
 {
 "key": "delivery",
-"file": "/tmp/cc0/car/Models/GLB format/delivery.glb",
+"file": "asset-src/kenney/car/Models/GLB format/delivery.glb",
 "length": 6,
 "lods": {
 "hi": 1800,
@@ -141,39 +173,23 @@
 "crease": 30
 },
 {
-"key": "cng",
-"file": "/tmp/skfb/models/auto_low/model.glb",
-"length": 2.9,
-"lods": {
-"hi": 2500,
-"lo": 700
-},
-"error": 0.08,
-"rotate": [
-0,
-90,
-0
-],
-"crease": 30
-},
-{
 "key": "rickshaw_fan",
-"file": "/tmp/skfb/models/rickshaw_fan/model.glb",
+"file": "asset-src/sketchfab/rickshaw_fan/model.glb",
 "length": 2.7,
 "lods": {
 "hi": 5000,
-"lo": 1100
+"lo": 3000
 },
 "error": 0.2,
 "crease": 30
 },
 {
 "key": "rickshaw_cycle",
-"file": "/tmp/skfb/models/rickshaw_cycle/model.glb",
+"file": "asset-src/sketchfab/rickshaw_cycle/model.glb",
 "length": 2.7,
 "lods": {
 "hi": 5000,
-"lo": 1100
+"lo": 3000
 },
 "error": 0.2,
 "rotate": [
@@ -185,30 +201,31 @@
 },
 {
 "key": "bus_town",
-"file": "/tmp/skfb/models/bus_town/model.glb",
+"file": "asset-src/sketchfab/bus_town/model.glb",
 "length": 10.5,
 "lods": {
 "hi": 4500,
-"lo": 900
+"lo": 3200
 },
 "error": 0.2,
 "crease": 30
 },
 {
 "key": "mosque_lalbagh",
-"file": "/tmp/skfb/models/mosque_lalbagh/model.glb",
-"length": 24,
+"file": "asset-src/sketchfab/mosque_lalbagh/model.glb",
+"length": 26,
 "lods": {
 "hi": 9000,
 "lo": 2500
 },
 "error": 0.05,
-"dropAbove": 0.6,
-"crease": 30
+"crease": 30,
+"dropExtent": 19,
+"keepRadius": 13
 },
 {
 "key": "mosque_stylized",
-"file": "/tmp/skfb/models/mosque_stylized/model.glb",
+"file": "asset-src/sketchfab/mosque_stylized/model.glb",
 "length": 32,
 "lods": {
 "hi": 9000,
@@ -219,7 +236,7 @@
 },
 {
 "key": "tower_asian",
-"file": "/tmp/skfb/models/tower_asian/model.glb",
+"file": "asset-src/sketchfab/tower_asian/model.glb",
 "height": 34,
 "lods": {
 "hi": 3000,
@@ -230,7 +247,7 @@
 },
 {
 "key": "tower_soviet",
-"file": "/tmp/skfb/models/tower_soviet/model.glb",
+"file": "asset-src/sketchfab/tower_soviet/model.glb",
 "height": 30,
 "lods": {
 "hi": 6000,

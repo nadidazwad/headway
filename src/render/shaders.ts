@@ -102,6 +102,10 @@ uniform vec3 uSkyBottom;
 uniform vec3 uInk;
 uniform vec2 uHaze;
 uniform float uFineInk;
+uniform vec3 uFocus;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uForward;
 layout(location = 0) out vec4 outColor;
 
 float depthEdge(float center, float a, float b, float threshold) {
@@ -129,11 +133,16 @@ void main() {
   vec3 solid = coverage > 0.001 ? color.rgb / coverage : vec3(0.0);
   vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(0.0, 1.0, vUv.y));
 
-  float depth = coverage > 0.001 ? c.z / coverage : 1000.0;
-  float haze = smoothstep(uHaze.x, uHaze.y, depth);
-  haze = 1.0 - (1.0 - haze) * (1.0 - haze * 0.15);
+  // Haze grows with distance from the line itself, so the train never fades along its own length.
+  float depth = coverage > 0.001 ? c.z / coverage : 0.0;
+  vec3 world = uFocus + uRight * (vUv.x * 2.0 - 1.0) + uUp * (vUv.y * 2.0 - 1.0) + uForward * depth;
+  float behind = smoothstep(uHaze.x, uHaze.y, -world.z);
+  behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
+  // Both edges of the generated city dissolve into the paper rather than stopping.
+  float edge = max(smoothstep(92.0, 124.0, world.z), smoothstep(128.0, 170.0, -world.z));
+  float haze = max(min(behind, 0.965), edge);
   vec3 inked = mix(solid, solid * uInk, line);
-  vec3 scene = mix(inked, sky, min(haze, 0.965));
+  vec3 scene = mix(inked, sky, haze);
   vec3 finalColor = mix(sky, scene, coverage);
   outColor = vec4(finalColor, 1.0);
 }

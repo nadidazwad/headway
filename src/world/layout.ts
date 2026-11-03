@@ -1,8 +1,8 @@
 /** Fixed measurements of the cross-section. Track runs along X; +Z is towards the viewer. */
 export const CHUNK_LENGTH = 60;
-export const SPAN = 30;
+export const SPAN = 20;
 /** Rail height. The real line stands near 13 m; the reference film stands far taller, and this splits it. */
-export const RAIL_Y = 22;
+export const RAIL_Y = 24;
 export const DECK_Y = RAIL_Y - 0.45;
 export const DECK_HALF = 4.7;
 export const TRACK_Z = 1.95;

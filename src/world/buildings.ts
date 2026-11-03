@@ -107,7 +107,7 @@ function drawBalcony(b: Batch, u: number, y: number, w: number, style: Style, lo
   b.box(u - 0.01, y + 0.06, 0, u + 0.07, y + 0.78, depth, style.wall);
   b.part();
   b.box(u, y + 0.78, depth - 0.09, u + w, y + 0.84, depth + 0.01, style.trim);
-  const grilled = rng.chance(0.7);
+  const grilled = rng.chance(0.38);
   if (grilled) {
     b.part();
     const bars = Math.round(w / 0.36);
@@ -237,6 +237,84 @@ function drawParapet(b: Batch, x0: number, z0: number, x1: number, z1: number, y
   b.box(x1 - t - 0.04, y + h, z0 + t, x1 + 0.05, y + h + 0.07, z1 - t, trim);
 }
 
+/** Waterproofing joints and a floor drain: the faint grid that stops a roof reading as blank paper. */
+function roofJoints(b: Batch, x0: number, z0: number, x1: number, z1: number, y: number, rng: Rng): void {
+  const step = rng.range(3.4, 4.6);
+  const color = 0xd9d7cc;
+  const top = y + 0.045;
+  for (let u = x0 + step; u < x1 - 0.5; u += step) {
+    b.quad([u - 0.02, top, z1 - 0.2], [u + 0.02, top, z1 - 0.2], [u + 0.02, top, z0 + 0.2], [u - 0.02, top, z0 + 0.2], color, [0, 1, 0]);
+  }
+  for (let v = z0 + step; v < z1 - 0.5; v += step) {
+    b.quad([x0 + 0.2, top, v + 0.02], [x1 - 0.2, top, v + 0.02], [x1 - 0.2, top, v - 0.02], [x0 + 0.2, top, v - 0.02], color, [0, 1, 0]);
+  }
+  b.part();
+  const dx = x1 - 0.9;
+  const dz = z1 - 0.9;
+  b.quad([dx - 0.14, top + 0.004, dz + 0.14], [dx + 0.14, top + 0.004, dz + 0.14], [dx + 0.14, top + 0.004, dz - 0.14], [dx - 0.14, top + 0.004, dz - 0.14], 0x8f918c, [0, 1, 0]);
+  b.part();
+}
+
+/** Chillers with round fans, tilted skylights, a ladder up the stair-head, and the pipes that feed it all. */
+function roofKit(b: Batch, x0: number, z0: number, x1: number, z1: number, y: number, sx: number, sz: number, stairW: number, stairD: number, rng: Rng): void {
+  const width = x1 - x0;
+  const depth = z1 - z0;
+  if (rng.chance(0.62)) {
+    // Twin chillers, each a slatted box with a fan on top.
+    const cx = x0 + width * rng.range(0.58, 0.72);
+    const cz = z0 + depth * rng.range(0.45, 0.68);
+    for (const offset of [0, 1.75]) {
+      b.part();
+      b.box(cx + offset, y, cz, cx + offset + 1.6, y + 0.82, cz + 1.2, 0xdcdad0);
+      for (let u = cx + offset + 0.12; u < cx + offset + 1.5; u += 0.15) {
+        b.part();
+        b.box(u, y + 0.1, cz + 1.2, u + 0.055, y + 0.72, cz + 1.21, 0x8e908b);
+      }
+      b.part();
+      b.cylinder(cx + offset + 0.8, y + 0.82, cz + 0.6, 0.44, 0.44, 0.07, 0xc9c8bf, 18);
+      b.part();
+      b.cylinder(cx + offset + 0.8, y + 0.89, cz + 0.6, 0.28, 0.28, 0.012, 0x50524f, 14);
+    }
+  }
+  if (rng.chance(0.42)) {
+    // Skylights: three tilted panels in a row, as on the roofs in the film.
+    const px = x0 + width * rng.range(0.12, 0.3);
+    const pz = z1 - depth * rng.range(0.26, 0.38);
+    for (let i = 0; i < 3; i++) {
+      const u = px + i * 1.55;
+      b.part();
+      b.quad([u, y + 0.18, pz + 0.9], [u + 1.4, y + 0.18, pz + 0.9], [u + 1.4, y + 0.52, pz], [u, y + 0.52, pz], 0xf5f4ee, [0, 1, 0.3]);
+      b.quad([u, y, pz + 0.9], [u + 1.4, y, pz + 0.9], [u + 1.4, y + 0.18, pz + 0.9], [u, y + 0.18, pz + 0.9], 0xc5c4bb, [0, 0, 1]);
+    }
+  }
+  if (rng.chance(0.58)) {
+    // Ladder and twin riser pipes up the stair-head.
+    const lx = sx + stairW * 0.7;
+    const lz = sz + stairD + 0.06;
+    const top = y + 3.5;
+    b.part();
+    b.box(lx, y, lz, lx + 0.05, top, lz + 0.05, 0x7f8280);
+    b.box(lx + 0.5, y, lz, lx + 0.55, top, lz + 0.05, 0x7f8280);
+    for (let r = y + 0.3; r < top; r += 0.32) {
+      b.box(lx, r, lz + 0.01, lx + 0.55, r + 0.035, lz + 0.04, 0x8d908e);
+    }
+    b.part();
+    b.bar([sx + 0.3, y, sz + stairD + 0.08], [sx + 0.3, y + 3.1, sz + stairD + 0.08], 0.06, 0.06, 0xb9b9b1, 8);
+    b.bar([sx + 0.56, y, sz + stairD + 0.08], [sx + 0.56, y + 3.1, sz + stairD + 0.08], 0.06, 0.06, 0xb9b9b1, 8);
+    b.part();
+    b.bar([sx + 0.3, y + 3.1, sz + stairD + 0.08], [sx + 0.3, y + 3.1, z1 - 0.3], 0.05, 0.05, 0xb9b9b1, 6);
+  }
+  if (rng.chance(0.3)) {
+    // A vent stack with a little cap.
+    const vx = x0 + rng.range(1, width - 1);
+    const vz = z0 + rng.range(1, depth * 0.4);
+    b.part();
+    b.cylinder(vx, y, vz, 0.2, 0.2, 1.2, 0xc4c4bb, 10);
+    b.part();
+    b.cylinder(vx, y + 1.2, vz, 0.28, 0.06, 0.18, 0xb0b0a8, 10);
+  }
+}
+
 /** Roof life: tanks, stair-head, rebar left for the next floor, garden pots, dish, washing. */
 function drawRoof(b: Batch, x0: number, z0: number, x1: number, z1: number, y: number, lod: number, style: Style, rng: Rng): void {
   const width = x1 - x0;
@@ -277,7 +355,9 @@ function drawRoof(b: Batch, x0: number, z0: number, x1: number, z1: number, y: n
     const profile: Array<[number, number]> = [[r * 0.92, base], [r, base + 0.1], [r, base + 1.15], [r * 0.82, base + 1.38], [r * 0.3, base + 1.5], [r * 0.3, base + 1.6], [0.01, base + 1.6]];
     b.lathe(tx, tz, profile, color, lod === 0 ? 12 : 8);
   }
+  roofKit(b, x0, z0, x1, z1, y, sx, sz, stairW, stairD, rng);
   if (lod >= 1) return;
+  roofJoints(b, x0, z0, x1, z1, y, rng);
   // Rebar left poking out of the columns, ready for the next floor that may never come.
   if (rng.chance(0.55)) {
     const corners: Array<[number, number]> = [[x0 + 0.5, z1 - 0.5], [x1 - 0.5, z1 - 0.5], [x0 + 0.5, z0 + 0.5], [x1 - 0.5, z0 + 0.5]];
@@ -387,6 +467,7 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
   });
   b.at(x0, 0, z0, () => {
     drawFacade(b, depth, floors, groundH, style, lod, rng);
+    if (lod === 0 && rng.chance(0.6)) wallRisers(b, depth, height, rng);
     if (lod <= 1) {
       b.part();
       b.box(0, groundH - 0.14, 0, depth, groundH, 0.1, style.trim);
@@ -401,6 +482,64 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
 
   drawParapet(b, x0, z0, x1, z1, height, 0.95, style.wall, style.trim);
   drawRoof(b, x0, z0, x1, z1, height, lod, style, rng);
+}
+
+/** Service risers and a cat ladder up a building's flank: the film's most repeated detail. */
+function wallRisers(b: Batch, faceWidth: number, height: number, rng: Rng): void {
+  const u = rng.range(faceWidth * 0.5, faceWidth - 1);
+  b.part();
+  for (const offset of [0, 0.22]) {
+    b.bar([u + offset, 0.2, 0.1], [u + offset, height, 0.1], 0.055, 0.055, 0xb4b5ad, 7);
+  }
+  for (let y = 2; y < height; y += 3.1) {
+    b.part();
+    b.box(u - 0.1, y, 0, u + 0.32, y + 0.07, 0.17, 0x8d8f8a);
+  }
+  if (rng.chance(0.55)) {
+    const lx = u + 0.5;
+    b.part();
+    b.box(lx, 3.2, 0.03, lx + 0.045, height + 0.9, 0.08, 0x858886);
+    b.box(lx + 0.46, 3.2, 0.03, lx + 0.505, height + 0.9, 0.08, 0x858886);
+    for (let r = 3.4; r < height + 0.9; r += 0.34) b.box(lx, r, 0.04, lx + 0.5, r + 0.035, 0.07, 0x949795);
+  }
+}
+
+/** A block that steps out at each terrace level, with fins and glass rails: the film's big stacked forms. */
+export function stackedBlock(b: Batch, plot: Plot, rng: Rng): void {
+  const { x0, x1, z0, z1, lod } = plot;
+  const style = pickStyle(rng, lod);
+  const tiers = Math.min(4, Math.max(2, Math.floor(plot.maxHeight / 9)));
+  let y = 0;
+  const pale = mixHex(style.wall, 0xffffff, 0.25);
+  for (let tier = 0; tier < tiers; tier++) {
+    const inset = tier % 2 === 0 ? 1.2 : 0;
+    const h = 3.1 * rng.int(2, 3);
+    const ax0 = x0 + inset, ax1 = x1 - inset, az0 = z0 + inset, az1 = z1 - inset;
+    b.part();
+    b.box(ax0, y, az0, ax1, y + h, az1, tier % 2 === 0 ? style.wall : pale);
+    const floors = Math.round(h / 3.1);
+    b.at(ax0, y, az1, () => drawFacade(b, ax1 - ax0, floors, 0, style, lod, rng));
+    b.at(ax0, y, az0, () => drawFacade(b, az1 - az0, floors, 0, style, lod, rng), FACE_X);
+    y += h;
+    // A terrace slab, wider than the storey below, with fins and a glass rail.
+    b.part();
+    b.box(x0 - 0.5, y, z0 - 0.5, x1 + 0.5, y + 0.28, z1 + 0.5, 0xf2f1e9);
+    y += 0.28;
+    if (lod === 0 && tier < tiers - 1) {
+      for (let u = x0 + 0.4; u < x1; u += 3.2) {
+        b.part();
+        b.box(u, y, z1 + 0.24, u + 0.14, y + 1.05, z1 + 0.44, 0x9c9e99);
+      }
+      for (let u = z0 + 0.4; u < z1; u += 3.2) {
+        b.part();
+        b.box(x0 - 0.44, y, u, x0 - 0.24, y + 1.05, u + 0.14, 0x9c9e99);
+      }
+      b.part();
+      b.box(x0 - 0.42, y + 0.98, z1 + 0.28, x1 + 0.3, y + 1.04, z1 + 0.34, 0xb0b2ad);
+    }
+  }
+  drawParapet(b, x0, z0, x1, z1, y, 0.8, style.wall, style.trim);
+  drawRoof(b, x0, z0, x1, z1, y, lod, style, rng);
 }
 
 /** A glass-fronted office or bank tower, like those around Karwan Bazar and Motijheel. */

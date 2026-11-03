@@ -158,12 +158,12 @@ function trackRun(b: Batch, x0: number, x1: number, z: number, context: Context)
 
 /** Overhead line: masts on both parapets, cantilever arms, messenger and contact wires. */
 function overhead(b: Batch, context: Context): void {
-  const MAST = SPAN;
+  const MAST = SPAN * 2;
   const steel = 0x8b9396;
   const dark = 0x7a7e80;
   const wireTop = RAIL_Y + 6.3;
   const contact = RAIL_Y + 5.25;
-  for (const distance of latticeIn(context, MAST, 15)) {
+  for (const distance of latticeIn(context, MAST)) {
     const x = localX(context, distance);
     for (const side of [1, -1]) {
       const z = side * (DECK_HALF - 0.32);
@@ -193,7 +193,7 @@ function overhead(b: Batch, context: Context): void {
     for (let i = 0; i <= 24; i++) {
       const x = -(i / 24) * CHUNK_LENGTH;
       const distance = context.start - x;
-      const phase = ((distance - 15) / MAST) % 1;
+      const phase = (distance / MAST) % 1;
       const t = phase < 0 ? phase + 1 : phase;
       const y = wireTop + 0.2 - 4 * t * (1 - t) * 0.8;
       const here: Vec3 = [x, y, z];
@@ -202,7 +202,7 @@ function overhead(b: Batch, context: Context): void {
     }
     for (const distance of latticeIn(context, 5)) {
       const x = localX(context, distance);
-      const phase = ((distance - 15) / MAST) % 1;
+      const phase = (distance / MAST) % 1;
       const t = phase < 0 ? phase + 1 : phase;
       const y = wireTop + 0.2 - 4 * t * (1 - t) * 0.8;
       b.bar([x, contact, z], [x, y, z], 0.008, 0.008, dark, 3);

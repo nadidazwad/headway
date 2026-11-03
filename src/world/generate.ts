@@ -1,7 +1,7 @@
 import type { Assets } from "../assets";
 import { Batch, type MeshData } from "../geometry";
 import { Rng, hashSeed } from "../shared/rng";
-import { apartmentBlock, brickBlock, glassTower, type Plot } from "./buildings";
+import { apartmentBlock, brickBlock, glassTower, stackedBlock, type Plot } from "./buildings";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, type Context } from "./layout";
 import { palm, tree } from "./nature";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
@@ -105,6 +105,8 @@ function fillRow(pieces: Pieces, assets: Assets, rng: Rng, x0: number, x1: numbe
       }
     } else if (z0 < -40 && distance > 45 && roll < 0.36 && plot.maxHeight > 40) {
       glassTower(b, plot, rng);
+    } else if (roll > 0.72 && plot.maxHeight > 16) {
+      stackedBlock(b, plot, rng);
     } else if (roll < 0.24) {
       brickBlock(b, plot, rng);
     } else {

@@ -33,6 +33,11 @@ type Kind = "sedan" | "suv" | "hatch" | "taxi" | "van" | "truck" | "delivery" | 
 
 const LENGTHS: Record<Kind, number> = { sedan: 4.4, suv: 4.7, hatch: 4, taxi: 4.4, van: 5, truck: 7, delivery: 6, cng: 2.9, rickshaw_fan: 2.7, rickshaw_cycle: 2.7, bus_town: 10.5, bike: 1.9 };
 
+const RICKSHAW_SEATS = {
+  rickshaw_fan: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
+  rickshaw_cycle: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
+};
+
 const WALKING_CAST = ["Male_Adult_15", "Female_Adult_06", "Male_Adult_08", "Female_Adult_10", "Female_Adult_05", "Male_Adult_17"];
 const PER_FRAME_POOL = 14;
 
@@ -41,6 +46,15 @@ const PER_FRAME_POOL = 14;
  * streets are never empty and cost the same however far the train has gone. Vehicles sharing a
  * lane share a speed, so they keep their spacing without any collision logic.
  */
+/** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
+function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
+  const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
+  const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_15");
+  b.at(seat.pullerX, seat.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "lo"), 0.9), -Math.PI / 2);
+  const fare = rng.int(0, assets.avatars.length - 1);
+  b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "lo"), 1.1), -Math.PI / 2);
+}
+
 export function createTraffic(material: ShaderMaterial, assets: Assets, seed: number): Traffic {
   const group = new Group();
   const rng = new Rng(hashSeed(seed, 77));
@@ -84,6 +98,7 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       const b = new Batch(1 << 12);
       b.cull = false;
       b.stamp(assets.prop(name, "lo"));
+      if (name === "rickshaw_fan" || name === "rickshaw_cycle") seatRiders(b, assets, name, rng);
       geometry = toBufferGeometry(b.finish());
     }
     const mesh = new InstancedMesh(geometry, material, Math.max(count, 1));

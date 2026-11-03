@@ -1,5 +1,4 @@
 import {
-  Camera,
   Color,
   ColorManagement,
   FloatType,
@@ -15,6 +14,7 @@ import {
   Texture,
   UnsignedByteType,
   Vector2,
+  Vector3,
   Vector4,
   WebGLRenderTarget,
   WebGLRenderer,
@@ -44,7 +44,7 @@ export interface Pipeline {
   /** Multisample count of the main pass: 4, 2 or 0. */
   setSamples(samples: number): void;
   resize(width: number, height: number): void;
-  render(scene: Scene, camera: Camera, focusDepth: number): void;
+  render(scene: Scene, camera: OrthographicCamera, focusDepth: number): void;
   readonly pixelRatio: number;
 }
 
@@ -114,6 +114,10 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uInk: { value: new Color(0.42, 0.42, 0.41) },
       uHaze: { value: new Vector2(12, 78) },
       uFineInk: { value: 0.6 },
+      uFocus: { value: new Vector3() },
+      uRight: { value: new Vector3() },
+      uUp: { value: new Vector3() },
+      uForward: { value: new Vector3() },
     },
   });
   const fullscreenScene = new Scene();
@@ -173,6 +177,12 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     },
     render(scene, camera, focusDepth) {
       shared.uFocusDepth.value = focusDepth;
+      const { uFocus, uRight, uUp, uForward } = composite.uniforms;
+      camera.updateMatrixWorld();
+      uRight!.value.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar((camera.right - camera.left) / 2);
+      uUp!.value.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar((camera.top - camera.bottom) / 2);
+      uForward!.value.setFromMatrixColumn(camera.matrixWorld, 2).negate();
+      uFocus!.value.setFromMatrixPosition(camera.matrixWorld).addScaledVector(uForward!.value, focusDepth);
       renderer.setRenderTarget(target);
       renderer.clear(true, true, false);
       renderer.render(scene, camera);

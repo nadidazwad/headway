@@ -1,0 +1,7 @@
+[["wait",800],["until","window.__metro && window.__metro.world.loaded>0 && window.__metro.world.pending===0",110000],["wait",800],
+["eval","(()=>{window.__errs=0;addEventListener('error',()=>window.__errs++);const i=window.__metro.pipeline.renderer.info;return 'start geoms '+i.memory.geometries+' tris '+window.__metro.world.triangles+' heap '+Math.round(performance.memory.usedJSHeapSize/1048576)+'MB'})()"],
+["eval","new Promise(async res=>{const m=window.__metro;const s=[];for(let k=0;k<6;k++){for(let i=0;i<40;i++){m.skip(60);await new Promise(r=>requestAnimationFrame(r));}await new Promise(r=>setTimeout(r,2500));const inf=m.pipeline.renderer.info;s.push(inf.memory.geometries+'g/'+m.world.loaded+'c/'+Math.round(m.world.triangles/1000)+'kt/'+Math.round(performance.memory.usedJSHeapSize/1048576)+'MB');}res(s.join('  '))})"],
+["wait",4000],
+["eval","'pending '+window.__metro.world.pending+' errors '+window.__errs+' canvas ok '+(window.__metro.pipeline.renderer.getContext().getError()===0)"],
+["shot","/home/outversal/Projects/dhaka-metro-train-of-thought/shots/q-far.png","#world",1],
+["sheet","/home/outversal/Projects/dhaka-metro-train-of-thought/shots/q-motion.png",500,6,"#world",0.5]]

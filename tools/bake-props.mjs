@@ -68,7 +68,7 @@ function collect(document) {
         const v = new Vector3();
         const p = [0, 0, 0];
         const t = [0, 0];
-        const part = partCounter++ % 250;
+        const part = partCounter++;
         for (let i = 0; i < position.getCount(); i++) {
           position.getElement(i, p);
           v.set(p[0], p[1], p[2]).applyMatrix4(world);
@@ -91,12 +91,12 @@ function collect(document) {
     for (const child of node.listChildren()) visit(child, world);
   };
   for (const scene of document.getRoot().listScenes()) for (const node of scene.listChildren()) visit(node, new Matrix4());
-  return { positions: Float32Array.from(positions), greys: Float32Array.from(greys), parts: Uint8Array.from(parts), indices: Uint32Array.from(indices) };
+  return { positions: Float32Array.from(positions), greys: Float32Array.from(greys), parts: Uint16Array.from(parts), indices: Uint32Array.from(indices) };
 }
 
 /** Removes any part much wider than the scene's median part: the ground plane or backdrop a model shipped on. */
-function dropBackdrop(mesh, limit) {
-  if (!limit) return mesh;
+function dropBackdrop(mesh, limit, absolute, keepRadius) {
+  if (!limit && !absolute && !keepRadius) return mesh;
   const spans = new Map();
   for (let i = 0; i < mesh.parts.length; i++) {
     const part = mesh.parts[i];
@@ -109,7 +109,8 @@ function dropBackdrop(mesh, limit) {
   }
   const extent = (s) => Math.max(s.max[0] - s.min[0], s.max[2] - s.min[2]);
   const widest = Math.max(...[...spans.values()].map(extent));
-  const dropped = new Set([...spans].filter(([, s]) => extent(s) >= widest * limit).map(([part]) => part));
+  const dropped = new Set([...spans].filter(([, s]) => (limit && extent(s) >= widest * limit) || (absolute && extent(s) > absolute) || (keepRadius && Math.hypot((s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2) > keepRadius)).map(([part]) => part));
+  console.log(`  dropped ${dropped.size} of ${spans.size} parts, widest ${widest.toFixed(1)}`);
   const indices = [];
   for (let i = 0; i < mesh.indices.length; i += 3) {
     if (!dropped.has(mesh.parts[mesh.indices[i]])) indices.push(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]);
@@ -128,7 +129,7 @@ function dropBackdrop(mesh, limit) {
     }
     return remap.get(v);
   });
-  return { positions: Float32Array.from(positions), greys: Float32Array.from(greys), parts: Uint8Array.from(parts), indices: Uint32Array.from(newIndices) };
+  return { positions: Float32Array.from(positions), greys: Float32Array.from(greys), parts: Uint16Array.from(parts), indices: Uint32Array.from(newIndices) };
 }
 
 /** Welds by position and part, so simplification can collapse across split UV seams. */
@@ -155,7 +156,7 @@ function weld({ positions, greys, parts, indices }, precision) {
     const a = remap[indices[i]], b = remap[indices[i + 1]], c = remap[indices[i + 2]];
     if (a !== b && b !== c && a !== c) outIndices.push(a, b, c);
   }
-  return { positions: Float32Array.from(outPositions), greys: Float32Array.from(outGreys), parts: Uint8Array.from(outParts), indices: Uint32Array.from(outIndices) };
+  return { positions: Float32Array.from(outPositions), greys: Float32Array.from(outGreys), parts: Uint16Array.from(outParts), indices: Uint32Array.from(outIndices) };
 }
 
 function normalsFor(positions, indices, crease) {
@@ -214,12 +215,47 @@ function expand(mesh, creaseDegrees) {
         out.pos.push(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
         out.nor.push(nx, ny, nz);
         out.grey.push(Math.round(greys[v] * 255));
-        out.part.push(parts[v]);
+        out.part.push(parts[v] % 250);
       }
       out.index.push(id);
     }
   }
   return out;
+}
+
+/** Every assembly keeps a budget in proportion to its size, and tiny fittings can vanish whole. */
+function simplifyPartByPart(mesh, target) {
+  const byPart = new Map();
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const part = mesh.parts[mesh.indices[i]];
+    if (!byPart.has(part)) byPart.set(part, []);
+    byPart.get(part).push(mesh.indices[i], mesh.indices[i + 1], mesh.indices[i + 2]);
+  }
+  const area = (list) => {
+    let sum = 0;
+    const a = new Vector3(), b = new Vector3(), c = new Vector3();
+    for (let i = 0; i < list.length; i += 3) {
+      a.fromArray(mesh.positions, list[i] * 3);
+      b.fromArray(mesh.positions, list[i + 1] * 3);
+      c.fromArray(mesh.positions, list[i + 2] * 3);
+      sum += b.sub(a).cross(c.sub(a)).length() / 2;
+    }
+    return sum;
+  };
+  const entries = [...byPart.values()].map((list) => ({ list, area: area(list) })).sort((p, q) => q.area - p.area);
+  const total = entries.reduce((sum, entry) => sum + entry.area ** 0.7, 0);
+  const out = [];
+  for (const { list, area: partArea } of entries) {
+    if (out.length / 3 >= target) break;
+    const budget = Math.max(4, Math.round((target * partArea ** 0.7) / total));
+    const indices = Uint32Array.from(list);
+    const count = Math.min(budget, indices.length / 3);
+    let [result] = MeshoptSimplifier.simplify(indices, mesh.positions, 3, count * 3, 0.6, []);
+    // Open, non-manifold scan-like parts keep their borders; only the sloppy pass can reduce those.
+    if (result.length > count * 4.5) [result] = MeshoptSimplifier.simplifySloppy(indices, mesh.positions, 3, null, count * 3, 0.6);
+    for (const v of result.length ? result : indices.subarray(0, 12)) out.push(v);
+  }
+  return Uint32Array.from(out);
 }
 
 const chunks = [];
@@ -239,7 +275,7 @@ const push = (typed) => {
 const index = { props: {} };
 for (const prop of config.props) {
   const document = await io.read(prop.file);
-  const raw = dropBackdrop(collect(document), prop.dropAbove);
+  const raw = dropBackdrop(collect(document), prop.dropAbove, prop.dropExtent, prop.keepRadius);
   const source = raw.indices.length / 3;
   // Normalise: rotate, then rest on the ground and centre on the origin, then scale to size.
   const rotation = new Quaternion().setFromEuler(new Euler(...(prop.rotate ?? [0, 0, 0]).map((d) => (d * Math.PI) / 180), "YXZ"));
@@ -264,7 +300,7 @@ for (const prop of config.props) {
   const entry = { size: size.clone().multiplyScalar(scale).toArray().map((x, k) => +(x * stretch[k]).toFixed(3)), source, lods: {} };
   for (const [lod, target] of Object.entries(prop.lods ?? { hi: 2500, lo: 500 })) {
     const count = Math.min(target, welded.indices.length / 3);
-    const [simplified] = MeshoptSimplifier.simplifyWithAttributes(welded.indices, welded.positions, 3, welded.greys, 1, [0.5], null, count * 3, prop.error ?? 0.04, []);
+    const simplified = prop.perPart ? simplifyPartByPart(welded, count) : MeshoptSimplifier.simplifyWithAttributes(welded.indices, welded.positions, 3, welded.greys, 1, [0.5], null, count * 3, prop.error ?? 0.04, [])[0];
     const expanded = expand({ ...welded, indices: simplified }, prop.crease ?? 38);
     entry.lods[lod] = {
       vertices: expanded.grey.length,
