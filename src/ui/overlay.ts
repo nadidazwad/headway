@@ -13,9 +13,13 @@ export interface Overlay {
   /** Shows the callout over a car, or hides it with null. */
   setCallout(label: CarLabel | null): void;
   placeCallout(x: number, y: number): void;
+  /** Draws the thin box round the hovered coach from its projected edges, or hides it. */
+  setWire(edges: Array<[number, number, number, number]> | null): void;
   /** Replaces the thought bubbles for the open car. */
   setBubbles(passengers: Passenger[]): void;
   placeBubble(id: string, x: number, y: number): void;
+  /** Writes this frame's bubble positions, lifting any that would overlap another. */
+  flushBubbles(): void;
   /** Expands one bubble's words and collapses the others. */
   openBubble(id: string | null): void;
   setReadout(state: JourneyState): void;
@@ -84,6 +88,7 @@ export function createOverlay(root: HTMLElement, handlers: Handlers, initial: La
       </div>
       <div class="line-strip" data-strip></div>
     </div>
+    <svg class="wire" data-wire aria-hidden="true"></svg>
     <div data-tags></div>
   `;
 
@@ -95,6 +100,7 @@ export function createOverlay(root: HTMLElement, handlers: Handlers, initial: La
     `<i class="line-train" data-train></i>`;
   const trainDot = $("[data-train]");
   const tags = $("[data-tags]");
+  const wire = root.querySelector<SVGSVGElement>("[data-wire]")!;
 
   const callout = document.createElement("div");
   callout.className = "tag callout";
@@ -103,6 +109,7 @@ export function createOverlay(root: HTMLElement, handlers: Handlers, initial: La
 
   const carButtons = $("[data-cars]");
   const bubbles = new Map<string, HTMLElement>();
+  const anchors = new Map<string, { x: number; y: number }>();
   let currentPassengers: Passenger[] = [];
   let currentCallout: CarLabel | null = null;
   let activeCar: number | null = null;
@@ -210,13 +217,39 @@ export function createOverlay(root: HTMLElement, handlers: Handlers, initial: La
     placeCallout(x, y) {
       if (currentCallout) place(callout, x, y);
     },
+    setWire(edges) {
+      wire.style.display = edges ? "block" : "none";
+      if (!edges) return;
+      wire.innerHTML = edges.map(([a, b, c, d]) => `<line x1="${a.toFixed(1)}" y1="${b.toFixed(1)}" x2="${c.toFixed(1)}" y2="${d.toFixed(1)}"/>`).join("");
+    },
     setBubbles(passengers) {
       currentPassengers = passengers;
       renderBubbles();
     },
     placeBubble(id, x, y) {
-      const element = bubbles.get(id);
-      if (element) place(element, x, y);
+      anchors.set(id, { x, y });
+    },
+    flushBubbles() {
+      const placed: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+      // The open bubble keeps its place; the rest make room for it, widest first.
+      const order = [...bubbles.keys()].sort((a, b) => (a === openId ? -1 : b === openId ? 1 : 0));
+      for (const id of order) {
+        const anchor = anchors.get(id);
+        const element = bubbles.get(id);
+        if (!anchor || !element) continue;
+        const width = element.offsetWidth;
+        const height = element.offsetHeight;
+        const left = Math.min(innerWidth - width - 8, Math.max(8, anchor.x - width / 2));
+        let top = Math.max(8, anchor.y - height - 12);
+        for (let guard = 0; guard < 6; guard++) {
+          const clash = placed.find((box) => left < box.right + 4 && left + width > box.left - 4 && top < box.bottom + 4 && top + height > box.top - 4);
+          if (!clash) break;
+          top = clash.top - height - 6;
+        }
+        placed.push({ left, right: left + width, top, bottom: top + height });
+        element.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+        element.style.setProperty("--tail", `${Math.min(width - 14, Math.max(14, anchor.x - left))}px`);
+      }
     },
     openBubble(id) {
       openId = id;

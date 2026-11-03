@@ -43,10 +43,9 @@ export interface Train {
 const SHELL_TOP = RAIL_Y + ROOF_Y + 1.6;
 
 /** Builds the six-car set with its nose at x = 0, trailing towards +x along the near track. */
-export function createTrain(pipeline: Pipeline, direction: 1 | -1 = 1, trackZ = TRACK_Z): Train {
+export function createTrain(pipeline: Pipeline, trackZ = TRACK_Z): Train {
   const group = new Group();
   group.position.set(0, RAIL_Y, trackZ);
-  if (direction < 0) group.scale.x = -1;
   const middle = { cab: "none", pantograph: false } as const;
   const pantographCar = { cab: "none", pantograph: true } as const;
   const front = buildCar({ cab: "front", pantograph: false });

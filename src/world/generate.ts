@@ -4,6 +4,7 @@ import { Rng, hashSeed } from "../shared/rng";
 import { apartmentBlock, brickBlock, glassTower, type Plot } from "./buildings";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, type Context } from "./layout";
 import { palm, tree } from "./nature";
+import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture } from "./street";
 import { STATION_HALF, buildStation } from "./station";
 import { buildViaduct } from "./viaduct";
@@ -52,8 +53,12 @@ function fillRow(b: Batch, rng: Rng, x0: number, x1: number, z0: number, z1: num
     };
     const distance = Math.abs((z0 + z1) / 2);
     const roll = rng.next();
-    if (roll < 0.05 && plot.lod === 0) {
-      // An empty lot: a pond, a tree or two, a few palms. There is always one nearby.
+    if (roll > 0.955 && plot.lod <= 1 && width > 14) {
+      mosque(b, plot, rng);
+    } else if (roll > 0.93 && plot.lod === 0 && width > 12) {
+      pond(b, plot, rng);
+    } else if (roll < 0.05 && plot.lod === 0) {
+      // An empty lot: a tree or two, a few palms. There is always one nearby.
       const trees = rng.int(1, 3);
       for (let i = 0; i < trees; i++) {
         const tx = rng.range(plot.x0 + 2, plot.x1 - 2);
@@ -85,7 +90,7 @@ export function generateChunk(seed: number, index: number): ChunkData {
 
   buildRoad(b, context, rng);
   buildViaduct(b, context, inStation);
-  for (const stop of stops) buildStation(b, context, stop);
+  for (const stop of stops) buildStation(b, context, stop, rng);
 
   const gaps: Array<[number, number]> = [];
   if (rng.chance(0.42)) {
@@ -95,6 +100,20 @@ export function generateChunk(seed: number, index: number): ChunkData {
     buildSideStreet(b, gapStart, gapStart + width, rng);
   }
   buildStreetFurniture(b, context, rng, (x) => !gaps.some(([a, c]) => x > a && x < c));
+
+  // Street trade and the odd foot-over-bridge, away from stations that already bridge the road.
+  const clear = (x: number): boolean => !inStation(x) && !gaps.some(([a, c]) => x > a - 3 && x < c + 3);
+  for (let i = 0; i < 3; i++) {
+    const x = rng.range(-CHUNK_LENGTH + 3, -3);
+    if (!clear(x)) continue;
+    const side = rng.chance(0.5) ? 1 : -1;
+    if (rng.chance(0.55)) teaStall(b, x, side, rng);
+    else fruitCart(b, x, side, rng);
+  }
+  if (rng.chance(0.16)) {
+    const x = rng.range(-CHUNK_LENGTH + 8, -8);
+    if (clear(x) && clear(x - 5) && clear(x + 5)) footBridge(b, x, rng);
+  }
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;

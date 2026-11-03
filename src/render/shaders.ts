@@ -1,8 +1,5 @@
 export const solidVertex = /* glsl */ `
 in vec4 colorPart;
-#ifdef USE_INSTANCING_COLOR
-in vec3 instanceColor;
-#endif
 out vec3 vColor;
 out vec3 vWorld;
 out vec3 vNormalWorld;
@@ -56,7 +53,7 @@ void main() {
   if (uCutEnabled > 0.5 && dot(vWorld, uCutPlane.xyz) > uCutPlane.w) discard;
   vec3 n = normalize(vNormalWorld);
   float light = 0.5 + 0.5 * dot(n, SUN);
-  float tone = 0.37 + 0.74 * light;
+  float tone = 0.5 + 0.6 * light;
   vec3 tint = mix(vec3(0.87, 0.91, 1.02), vec3(1.01, 1.0, 0.98), smoothstep(0.25, 0.95, light));
 
   vec3 base = vColor;
@@ -94,6 +91,7 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 uniform vec3 uInk;
 uniform vec2 uHaze;
+uniform float uFineInk;
 layout(location = 0) out vec4 outColor;
 
 float depthEdge(float center, float a, float b, float threshold) {
@@ -114,7 +112,7 @@ void main() {
   float threshold = 0.05 + abs(c.z) * 0.0035;
   float depthLine = max(depthEdge(c.z, l.z, r.z, threshold), depthEdge(c.z, d.z, u.z, threshold));
   float normalLine = smoothstep(0.22, 0.6, length(l.xy - r.xy) + length(d.xy - u.xy));
-  float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * 0.6;
+  float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * uFineInk;
   float line = max(depthLine * 0.9, max(normalLine * 0.75, partLine));
 
   float coverage = color.a;

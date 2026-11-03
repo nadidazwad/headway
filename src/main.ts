@@ -2,11 +2,12 @@ import "./ui/fonts";
 import { Mesh, Scene, Vector3 } from "three";
 import { createCameraRig } from "./camera";
 import { Batch } from "./geometry";
-import { TRAIN_LENGTH, createJourney } from "./line6";
+import { TIME_SCALE, TRAIN_LENGTH, VISUAL_SCALE, createJourney } from "./line6";
 import { drawPerson } from "./people";
 import { createPipeline, toBufferGeometry } from "./render";
 import { createAtlas } from "./signs/atlas";
 import { operatorFor, rosterFor, type Passenger, type Theme } from "./thoughts";
+import { createTraffic } from "./traffic";
 import { createTrain, type TrainCar } from "./train";
 import { createOverlay, type Language } from "./ui";
 import { RAIL_Y, TRACK_Z, createWorld } from "./world";
@@ -22,18 +23,25 @@ const world = createWorld(pipeline.solid, seed);
 scene.add(world.group);
 const train = createTrain(pipeline);
 scene.add(train.group);
+const traffic = createTraffic(pipeline.solid, seed);
+scene.add(traffic.group);
+// A second set on the other track, heading the other way.
+const opposing = createTrain(pipeline, -TRACK_Z);
+scene.add(opposing.group);
+let opposingX = -900;
+const OPPOSING_SPEED = 13;
 
-const wideFocus = (): Vector3 => new Vector3(TRAIN_LENGTH * 0.31, RAIL_Y - 2.5, 0);
+const wideFocus = (): Vector3 => new Vector3(TRAIN_LENGTH * 0.27, RAIL_Y - 3.2, 0);
 const rig = createCameraRig({
   azimuth: Number(params.get("az") ?? 24),
   elevation: Number(params.get("el") ?? 33),
-  width: Number(params.get("w") ?? 112),
+  width: Number(params.get("w") ?? 98),
   focus: params.has("fx") ? new Vector3(Number(params.get("fx")), RAIL_Y - 2.5, 0) : wideFocus(),
 });
 rig.snap();
 
 function resize(): void {
-  pipeline.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  pipeline.setPixelRatio(params.has("pr") ? Number(params.get("pr")) : Math.min(devicePixelRatio || 1, 2));
   pipeline.resize(innerWidth, innerHeight);
 }
 window.addEventListener("resize", resize);
@@ -241,7 +249,7 @@ function updateCamera(time: number, dt: number): void {
     const drift = reducedMotion ? 0 : Math.sin(time * 0.05);
     if (!params.has("az")) target.azimuth = 24 + drift * 13;
     target.elevation = params.has("el") ? Number(params.get("el")) : 33;
-    const base = params.has("w") ? Number(params.get("w")) : innerWidth / innerHeight > 1.2 ? 112 : 70;
+    const base = params.has("w") ? Number(params.get("w")) : innerWidth / innerHeight > 1.2 ? 98 : 66;
     target.width = base * zoomFactor;
     if (!params.has("fx")) target.focus.copy(wideFocus());
   } else {
@@ -250,9 +258,10 @@ function updateCamera(time: number, dt: number): void {
     const portrait = innerWidth / innerHeight < 1;
     target.azimuth = 22;
     target.elevation = 34;
-    target.width = (cab ? 12 : 24) * (portrait ? 0.9 : 1) * zoomFactor;
-    const x = cab ? 2.6 : car.group.position.x;
-    target.focus.set(x, RAIL_Y + 2.3, TRACK_Z - 0.3);
+    target.width = (cab ? 10 : 18) * (portrait ? 0.9 : 1) * zoomFactor;
+    const pan = cab || reducedMotion ? 0 : Math.sin(time * 0.11) * 3;
+    const x = cab ? 2.4 : car.group.position.x + (car.index === 0 ? 1.4 : 0) + pan;
+    target.focus.set(x, RAIL_Y + 2.45, TRACK_Z - 0.3);
   }
   rig.update(reducedMotion ? 1 : dt, innerWidth / innerHeight);
 }
@@ -267,15 +276,34 @@ function updateOpenness(dt: number): void {
   }
 }
 
+const corner = [new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3()];
+const BOX_EDGES = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4], [0, 4], [1, 5], [2, 6], [3, 7]] as const;
+
+function updateWire(car: TrainCar): void {
+  const { min, max } = car.bounds;
+  const edges: Array<[number, number, number, number]> = [];
+  corner.forEach((p, i) => p.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z));
+  const a = { x: 0, y: 0 };
+  const b = { x: 0, y: 0 };
+  for (const [i, j] of BOX_EDGES) {
+    rig.screenPosition(corner[i]!, a, innerWidth, innerHeight);
+    rig.screenPosition(corner[j]!, b, innerWidth, innerHeight);
+    edges.push([a.x, a.y, b.x, b.y]);
+  }
+  overlay.setWire(edges);
+}
+
 function updateTags(dt: number): void {
   if (hovered !== null) {
     overlay.setCallout({ index: hovered, theme: carThemeOf(hovered) });
     const car = carForChoice(hovered);
-    point.set(car.group.position.x, RAIL_Y + 5.1, TRACK_Z);
+    updateWire(car);
+    point.set(car.group.position.x, car.bounds.max.y + 0.2, TRACK_Z);
     rig.screenPosition(point, screen, innerWidth, innerHeight);
     overlay.placeCallout(screen.x, screen.y);
-  } else if (open === null) {
-    overlay.setCallout(null);
+  } else {
+    overlay.setWire(null);
+    if (open === null) overlay.setCallout(null);
   }
   if (open !== null) {
     const car = carForChoice(open);
@@ -286,6 +314,7 @@ function updateTags(dt: number): void {
       rig.screenPosition(point, screen, innerWidth, innerHeight);
       overlay.placeBubble(person.id, screen.x, screen.y);
     }
+    overlay.flushBubbles();
     bubbleTimer += dt;
     if (bubbleTimer > 5.2 && list.length > 1) {
       bubbleTimer = 0;
@@ -316,11 +345,24 @@ function frame(now: number): void {
 
   world.update(distance, 340, 300);
   train.update(state.doors, time, state.speedKmh);
+  traffic.update(distance, time);
   runTour(now);
   updateOpenness(dt);
   updateCamera(time, dt);
   updateTags(dt);
   overlay.setReadout(state);
+  pipeline.setViewWidth(rig.width);
+  // Passing every minute or two: never long enough to feel scheduled, never so rare it surprises.
+  if (!reducedMotion) {
+    const relative = OPPOSING_SPEED + (state.speedKmh / 3.6) * (TIME_SCALE / VISUAL_SCALE);
+    opposingX += relative * dt;
+    if (opposingX > 520) opposingX = -520 - Math.random() * 900;
+    opposing.group.position.x = opposingX;
+    opposing.group.visible = opposingX > -420;
+    if (opposing.group.visible) opposing.update(0, time, 80);
+  } else {
+    opposing.group.visible = false;
+  }
   pipeline.render(scene, rig.camera, rig.focusDepth);
   requestAnimationFrame(frame);
 }

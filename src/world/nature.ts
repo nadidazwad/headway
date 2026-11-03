@@ -8,16 +8,26 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, d
   const leaves = blossom ? [city.blossom, 0xe5613a, 0xc93f27] : [city.leaf, city.leafDark, city.leafLight];
   b.part();
   b.bar([x, 0, z], [x + rng.range(-0.3, 0.3), height * 0.55, z + rng.range(-0.3, 0.3)], height * 0.035, height * 0.022, city.bark, 6);
-  const clusters = detail ? rng.int(14, 22) : 3;
   const spread = height * 0.5;
-  // Rain trees spread wide and flat: many small clumps over a broad, shallow dome.
-  for (let i = 0; i < clusters; i++) {
-    const angle = rng.range(0, Math.PI * 2);
-    const radius = Math.sqrt(rng.next()) * spread;
-    const r = rng.range(0.2, 0.34) * spread * (detail ? 1 : 2);
-    const dome = 1 - (radius / spread) ** 2;
+  const bud = detail ? 9 : 5;
+  // Rain trees spread wide and flat: a dark under-canopy with brighter clumps catching the sun.
+  const under = detail ? 7 : 3;
+  for (let i = 0; i < under; i++) {
+    const angle = (i / under) * Math.PI * 2 + rng.range(-0.3, 0.3);
+    const radius = i === 0 ? 0 : spread * rng.range(0.45, 0.72);
+    const r = spread * rng.range(0.42, 0.56);
     b.part();
-    b.ellipsoid(x + Math.cos(angle) * radius, height * (0.68 + 0.28 * dome), z + Math.sin(angle) * radius, r, r * 0.62, r, rng.pick(leaves), detail ? 3 : 3, detail ? 7 : 6);
+    b.ellipsoid(x + Math.cos(angle) * radius, height * 0.72, z + Math.sin(angle) * radius, r, r * 0.52, r, leaves[1]!, 5, bud + 3);
+  }
+  if (!detail) return;
+  const tufts = rng.int(22, 34);
+  for (let i = 0; i < tufts; i++) {
+    const angle = rng.range(0, Math.PI * 2);
+    const radius = Math.sqrt(rng.next()) * spread * 1.08;
+    const r = spread * rng.range(0.1, 0.2);
+    const dome = 1 - (radius / (spread * 1.1)) ** 2;
+    b.part();
+    b.ellipsoid(x + Math.cos(angle) * radius, height * (0.74 + 0.2 * dome), z + Math.sin(angle) * radius, r, r * 0.7, r, i % 3 === 0 ? leaves[2]! : leaves[0]!, 4, bud);
   }
 }
 

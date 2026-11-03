@@ -18,7 +18,6 @@ export interface CarMeshes {
   fixed: MeshData;
   /** Near wall, roof and roof equipment: the part cut away to look inside. */
   shell: MeshData;
-  /** One door leaf, instanced along both sides of the train. */
 }
 
 interface CarOptions {
@@ -99,14 +98,8 @@ function bodySide(b: Batch, x0: number, x1: number, z: number, outward: number, 
   const openings: Array<[number, number, "door" | "window"]> = [];
   const carHalf = CAR_LENGTH / 2;
   for (const center of DOOR_CENTERS) openings.push([center - DOOR_HALF - 0.08, center + DOOR_HALF + 0.08, "door"]);
-  const windowsAt = [
-    [-4.7, 1.5], [0, 2.9], [4.7, 1.5], [-9.0, 0.95], [9.0, 0.95],
-  ] as const;
-  for (const [center, half] of windowsAt) {
-    const w0 = center - half * 0.5 - (Math.abs(center) < 1 ? 0.45 : 0.22);
-    const w1 = center + half * 0.5 + (Math.abs(center) < 1 ? 0.45 : 0.22);
-    openings.push([w0, w1, "window"]);
-  }
+  const panes: Array<[number, number]> = [[-5.75, -3.65], [-1.45, 1.45], [3.65, 5.75], [-9.65, -8.35], [8.35, 9.65]];
+  for (const [w0, w1] of panes) openings.push([w0, w1, "window"]);
   openings.sort((a, c2) => a[0] - c2[0]);
   const skin = c.silver;
   const y0 = FLOOR_Y;
@@ -185,20 +178,23 @@ function openingsTrim(b: Batch, x0: number, x1: number, z: number, outward: numb
 }
 
 /** Window glass as seen from outside, set in dark rubber. */
-function glazing(b: Batch, z: number, outward: number, alpha: boolean): void {
+function glazing(b: Batch, x0: number, x1: number, z: number, outward: number): void {
+  // Rubber window surrounds only: with no pane to tint them, the passengers show from outside,
+  // which is how the reference's train keeps its people visible at a distance.
   const belt = FLOOR_Y + 0.72;
   const head = FLOOR_Y + 1.98;
   const panes: Array<[number, number]> = [
     [-5.75, -3.65], [-1.45, 1.45], [3.65, 5.75], [-9.65, -8.35], [8.35, 9.65],
   ];
+  const t = 0.06;
+  const out = z + outward * 0.012;
   for (const [u0, u1] of panes) {
+    if (u1 < x0 || u0 > x1) continue;
     b.part();
-    b.quad([u0, belt, z + outward * 0.005], [u1, belt, z + outward * 0.005], [u1, head, z + outward * 0.005], [u0, head, z + outward * 0.005], 0x384046, [0, 0, outward]);
-    if (alpha) {
-      const glassZ = z + outward * 0.012;
-      b.part();
-      b.quad([u0 + 0.07, belt + 0.07, glassZ], [u1 - 0.07, belt + 0.07, glassZ], [u1 - 0.07, head - 0.07, glassZ], [u0 + 0.07, head - 0.07, glassZ], c.glass, [0, 0, outward]);
-    }
+    b.box(u0, belt, Math.min(z, out), u1, belt + t, Math.max(z, out), 0x2e3438);
+    b.box(u0, head - t, Math.min(z, out), u1, head, Math.max(z, out), 0x2e3438);
+    b.box(u0, belt + t, Math.min(z, out), u0 + t, head - t, Math.max(z, out), 0x2e3438);
+    b.box(u1 - t, belt + t, Math.min(z, out), u1, head - t, Math.max(z, out), 0x2e3438);
   }
 }
 
@@ -387,8 +383,13 @@ function interior(b: Batch, x0: number, x1: number): void {
     if (kind === "w") {
       b.quad([from, y0, wallZ], [to, y0, wallZ], [to, belt, wallZ], [from, belt, wallZ], wall, [0, 0, 1]);
       b.quad([from, head, wallZ], [to, head, wallZ], [to, y1, wallZ], [from, y1, wallZ], wall, [0, 0, 1]);
+      // The far windows are real openings: the city goes by through them.
       b.part();
-      b.quad([from, belt, wallZ - 0.01], [to, belt, wallZ - 0.01], [to, head, wallZ - 0.01], [from, head, wallZ - 0.01], 0xaac8d2, [0, 0, 1]);
+      const t = 0.05;
+      b.box(from, belt, wallZ, to, belt + t, wallZ + 0.04, 0x8a8f90);
+      b.box(from, head - t, wallZ, to, head, wallZ + 0.04, 0x8a8f90);
+      b.box(from, belt, wallZ, from + t, head, wallZ + 0.04, 0x8a8f90);
+      b.box(to - t, belt, wallZ, to, head, wallZ + 0.04, 0x8a8f90);
       b.part();
     } else {
       b.quad([from, y0 + DOOR_HEIGHT + 0.04, wallZ], [to, y0 + DOOR_HEIGHT + 0.04, wallZ], [to, y1, wallZ], [from, y1, wallZ], wall, [0, 0, 1]);
@@ -421,14 +422,17 @@ function interior(b: Batch, x0: number, x1: number): void {
       b.box(from, FLOOR_Y + 0.08, z - 0.2, to, seatY - 0.08, z + 0.2, 0x8a9094);
       b.part();
       b.box(from, seatY - 0.08, z - 0.26, to, seatY, z + 0.26, c.seat);
-      // Back rest.
-      b.part();
-      const backZ = side * inside - side * 0.06;
-      b.box(from, seatY, Math.min(backZ, backZ - side * 0.1), to, seatY + 0.55, Math.max(backZ, backZ - side * 0.1), c.seat);
-      // White screens at the bench ends.
+      // Back rest. On the near side it goes with the wall when the car is opened.
+      if (side < 0) {
+        b.part();
+        const backZ = side * inside - side * 0.06;
+        b.box(from, seatY, Math.min(backZ, backZ - side * 0.1), to, seatY + 0.55, Math.max(backZ, backZ - side * 0.1), c.seat);
+      }
+      // White screens at the bench ends, low on the near side so they do not hide anyone.
+      const screenTop = side < 0 ? FLOOR_Y + 1.25 : FLOOR_Y + 0.62;
       for (const end of [from, to]) {
         b.part();
-        b.box(end - 0.03, FLOOR_Y + 0.05, Math.min(z - 0.28, side * inside), end + 0.03, FLOOR_Y + 1.25, Math.max(z + 0.28, side * inside), c.seatEnd);
+        b.box(end - 0.03, FLOOR_Y + 0.05, Math.min(z - 0.28, side * inside), end + 0.03, screenTop, Math.max(z + 0.28, side * inside), c.seatEnd);
       }
       // Curved grab rail over the end of the bench.
       b.part();
@@ -526,7 +530,18 @@ export function buildCar({ cab, pantograph }: CarOptions): CarMeshes {
     fixed.part();
     const a = Math.min(noseAt - direction * 0.05, noseAt - direction * CAB_DEPTH);
     const d = Math.max(noseAt - direction * 0.05, noseAt - direction * CAB_DEPTH);
-    fixed.box(a, FLOOR_Y - 0.3, -HALF_WIDTH + 0.05, d, FLOOR_Y, HALF_WIDTH - 0.05, c.floor);
+    const tip = noseAt;
+    const shoulder = noseAt - direction * 0.45;
+    const back = noseAt - direction * CAB_DEPTH;
+    const w = HALF_WIDTH - 0.05;
+    void a;
+    void d;
+    fixed.prism([[tip, -w * 0.72], [shoulder, -w], [back, -w], [back, w], [shoulder, w], [tip, w * 0.72]], FLOOR_Y - 0.3, FLOOR_Y, c.floor);
+    // A low white rim where the nose was cut away, so the platform reads as the front of a cab.
+    fixed.part();
+    fixed.box(back, FLOOR_Y, w - 0.06, shoulder, FLOOR_Y + 0.16, w, c.seatEnd);
+    fixed.box(back, FLOOR_Y, -w, shoulder, FLOOR_Y + 0.16, -w + 0.06, c.seatEnd);
+    fixed.prism([[tip, -w * 0.72], [shoulder, -w], [shoulder + direction * -0.06, -w], [tip - direction * 0.06, -w * 0.68], [tip - direction * 0.06, w * 0.68], [shoulder + direction * -0.06, w], [shoulder, w], [tip, w * 0.72]], FLOOR_Y, FLOOR_Y + 0.16, c.seatEnd);
     cabInterior(fixed, noseAt, direction);
   }
 
@@ -535,9 +550,16 @@ export function buildCar({ cab, pantograph }: CarOptions): CarMeshes {
   bodySide(shell, bodyFrom, bodyTo, HALF_WIDTH, 1, noseAt);
   bodyRibs(shell, bodyFrom, bodyTo, HALF_WIDTH);
   openingsTrim(shell, bodyFrom, bodyTo, HALF_WIDTH, 1);
-  glazing(shell, HALF_WIDTH, 1, true);
+  glazing(shell, bodyFrom, bodyTo, HALF_WIDTH, 1);
   roof(shell, bodyFrom, bodyTo, pantograph, cab);
   if (noseAt !== null) cabNose(shell, noseAt, cab === "front" ? -1 : 1);
+  // Near benches' backs belong to the wall behind them, so they leave with it.
+  for (const [u0, u1] of [[-6.3, -3.1], [-1.75, 1.75], [3.1, 6.3], [-9.6, -7.85], [7.85, 9.6]] as const) {
+    if (u1 < bodyFrom || u0 > bodyTo) continue;
+    shell.part();
+    const inside = HALF_WIDTH - 0.08;
+    shell.box(Math.max(u0, bodyFrom), FLOOR_Y + 0.46, inside - 0.16, Math.min(u1, bodyTo), FLOOR_Y + 1.01, inside - 0.06, c.seat);
+  }
   if (cab !== "rear") {
     // Gangway bellows towards the next car.
     shell.part();

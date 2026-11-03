@@ -1,8 +1,10 @@
 import type { Batch, Vec3 } from "../geometry";
 import type { StationStop } from "../line6";
 import { STATIONS, TRAIN_LENGTH } from "../line6";
-import { concrete, city, LINE_GREEN } from "../shared/palette";
+import { concrete, LINE_GREEN } from "../shared/palette";
+import type { Rng } from "../shared/rng";
 import { boardUv } from "../signs/regions";
+import { bystander } from "./landmarks";
 import { CHUNK_LENGTH, DECK_Y, RAIL_Y, TRACK_Z, localX, type Context } from "./layout";
 import { trackRun } from "./viaduct";
 
@@ -281,7 +283,7 @@ function stair(b: Batch, x: number, side: number, boardIndex: number): void {
 }
 
 /** Draws the part of one station that falls in this chunk. */
-export function buildStation(b: Batch, context: Context, stop: StationStop): void {
+export function buildStation(b: Batch, context: Context, stop: StationStop, rng: Rng): void {
   const center = stop.center;
   const boardIndex = STATIONS.indexOf(stop.station);
   const whole = clip(context, center - STATION_HALF, center + STATION_HALF);
@@ -350,6 +352,17 @@ export function buildStation(b: Batch, context: Context, stop: StationStop): voi
   }
   for (const s of anchors(context, center, 40, 40)) hangingSign(b, localX(context, s) + 6, 1, boardIndex);
 
+  // People waiting behind the yellow line, in the thin clusters of an off-peak platform.
+  if (platformRange) {
+    const crowd = Math.round((platformRange[1] - platformRange[0]) * 0.34);
+    for (let i = 0; i < crowd; i++) {
+      const x = rng.range(platformRange[0] + 0.5, platformRange[1] - 0.5);
+      const side = rng.chance(0.6) ? 1 : -1;
+      const z = side * rng.range(4.8, 7.1);
+      bystander(b, x, PLATFORM_Y + 0.02, z, side > 0 ? Math.PI + rng.range(-0.5, 0.5) : rng.range(-0.5, 0.5), rng);
+    }
+  }
+
   // Near-side railing so the platform has an edge against the drop.
   if (platformRange) {
     b.part();
@@ -374,5 +387,4 @@ export function buildStation(b: Batch, context: Context, stop: StationStop): voi
     b.part();
     b.quad([x - 6.1, y0, CONCOURSE_Z + 0.33], [x + 6.1, y0, CONCOURSE_Z + 0.33], [x + 6.1, y0 + 0.9, CONCOURSE_Z + 0.33], [x - 6.1, y0 + 0.9, CONCOURSE_Z + 0.33], 0xffffff, [0, 0, 1], boardUv(boardIndex));
   }
-  void city;
 }

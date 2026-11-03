@@ -1,6 +1,7 @@
 import {
   Camera,
   Color,
+  ColorManagement,
   FloatType,
   GLSL3,
   HalfFloatType,
@@ -35,6 +36,8 @@ export interface Pipeline {
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
   setHaze(start: number, end: number): void;
+  /** Lets lines between small parts fade as the camera pulls back, so a wide view never turns to noise. */
+  setViewWidth(metres: number): void;
   setPixelRatio(ratio: number): void;
   resize(width: number, height: number): void;
   render(scene: Scene, camera: Camera, focusDepth: number): void;
@@ -46,6 +49,8 @@ export interface Pipeline {
  * second one. The lines come from the buffer, so any solid in the world gets them for free.
  */
 export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
+  // All colours here are authored and displayed as sRGB values; nothing is lit in linear light.
+  ColorManagement.enabled = false;
   const renderer = new WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance", stencil: false });
   renderer.outputColorSpace = LinearSRGBColorSpace;
   renderer.setClearColor(new Color(0, 0, 0), 0);
@@ -98,7 +103,8 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uSkyTop: { value: new Color(0xf6efe0) },
       uSkyBottom: { value: new Color(0xf7ecd9) },
       uInk: { value: new Color(0.42, 0.42, 0.45) },
-      uHaze: { value: new Vector2(16, 135) },
+      uHaze: { value: new Vector2(10, 105) },
+      uFineInk: { value: 0.6 },
     },
   });
   const fullscreenScene = new Scene();
@@ -136,6 +142,10 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     },
     setHaze(start, end) {
       composite.uniforms.uHaze!.value.set(start, end);
+    },
+    setViewWidth(metres) {
+      const t = Math.min(1, Math.max(0, (metres - 20) / 70));
+      composite.uniforms.uFineInk!.value = 0.8 - 0.42 * t;
     },
     setPixelRatio(ratio) {
       pixelRatio = ratio;

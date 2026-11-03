@@ -46,11 +46,10 @@ function pier(b: Batch, x: number, number: number): void {
     [x + w - r, w], [x - w + r, w], [x - w, w - r], [x - w, -w + r],
   ];
   b.prism(outline, 0.28, PIER_TOP - 2.7, shaftColor);
-  b.part();
   for (let i = 0; i < 6; i++) {
     const u = -0.75 + i * 0.3;
-    b.box(x + u - 0.05, 2.4, w, x + u + 0.05, PIER_TOP - 3.1, w + 0.05, concrete.stain);
-    b.box(x - w - 0.05, 2.4, u - 0.05, x - w, PIER_TOP - 3.1, u + 0.05, concrete.stain);
+    b.box(x + u - 0.05, 2.4, w, x + u + 0.05, PIER_TOP - 3.1, w + 0.015, concrete.stain);
+    b.box(x - w - 0.015, 2.4, u - 0.05, x - w, PIER_TOP - 3.1, u + 0.05, concrete.stain);
   }
   // Flared head under the deck: octagon widening towards the bearing shelf.
   b.part();
@@ -129,7 +128,7 @@ export function trackRun(b: Batch, x0: number, x1: number, z: number, context: C
 function overhead(b: Batch, context: Context): void {
   const MAST = SPAN;
   const steel = 0x8b9396;
-  const dark = 0x3b3f41;
+  const dark = 0x62676a;
   const wireTop = RAIL_Y + 5.7;
   const contact = RAIL_Y + 4.65;
   for (const distance of latticeIn(context, MAST, 15)) {

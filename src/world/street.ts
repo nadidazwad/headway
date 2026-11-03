@@ -17,7 +17,6 @@ export function buildRoad(b: Batch, context: Context, rng: Rng): void {
   for (const distance of latticeIn(context, 6)) {
     const x = localX(context, distance);
     for (const z of [5.4, 9.4, -5.4, -9.4]) {
-      b.part();
       b.quad([x - 2.6, 0.03, z + 0.07], [x, 0.03, z + 0.07], [x, 0.03, z - 0.07], [x - 2.6, 0.03, z - 0.07], city.roadLine, [0, 1, 0]);
     }
   }
@@ -26,10 +25,12 @@ export function buildRoad(b: Batch, context: Context, rng: Rng): void {
   for (let i = 0; i < patches; i++) {
     const px = rng.range(x0 + 3, x1 - 3);
     const pz = rng.range(-12, 12);
-    b.part();
     b.quad([px - rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz + rng.range(0.5, 1.2)], [px + rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], [px - rng.range(1, 3), 0.025, pz - rng.range(0.5, 1.2)], 0x6a696d, [0, 1, 0]);
   }
 
+  // The viaduct's shadow, thrown away from the sun onto the far lanes.
+  b.part();
+  b.quad([x0, 0.028, -5], [x1, 0.028, -5], [x1, 0.028, -14], [x0, 0.028, -14], 0x696a70, [0, 1, 0]);
   buildMedian(b, context, rng);
   for (const side of [1, -1]) buildPavement(b, context, side);
 }
@@ -38,8 +39,7 @@ function kerbStripes(b: Batch, context: Context, z: number, top: number, height:
   for (const distance of latticeIn(context, 1)) {
     const x = localX(context, distance);
     const dark = Math.floor(distance) % 2 === 0;
-    b.part();
-    b.box(x - 1, 0, z - 0.14, x, top - 0 + height - height, z + 0.14, dark ? city.kerbDark : city.kerbLight);
+    b.box(x - 1, 0, z - 0.14, x, top + height, z + 0.14, dark ? city.kerbDark : city.kerbLight);
   }
 }
 
