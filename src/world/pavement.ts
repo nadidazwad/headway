@@ -3,8 +3,7 @@ import { Surface, type Batch } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { awnings, city } from "../shared/palette";
 import { posterUv } from "../signs/regions";
-import { drawMotorbike } from "../traffic/vehicles";
-import { CHUNK_LENGTH, FRONT_ROW, ROAD_HALF, SIDEWALK_HALF } from "./layout";
+import { CHUNK_LENGTH, FRONT_ROW, ROAD_HALF, SIDEWALK_HALF, type Cells } from "./layout";
 import { bystander } from "./landmarks";
 
 /**
@@ -131,13 +130,13 @@ function baskets(b: Batch, assets: Assets, x: number, side: number, rng: Rng): n
 }
 
 /** A row of motorbikes parked nose-in at an angle, as outside any bank or pharmacy. */
-function parkedBikes(b: Batch, x: number, side: number, rng: Rng): number {
+function parkedBikes(b: Batch, assets: Assets, x: number, side: number, rng: Rng): number {
   const count = rng.int(3, 6);
   const z = side * (FRONTAGE + 0.85);
   for (let i = 0; i < count; i++) {
     b.part();
-    const body = rng.pick([0x9a2a24, 0x1f2224, 0x2f4f8a, 0x5e6a6d, 0xc8413a, 0x3a3e40]);
-    b.at(x + i * 0.85, 0.2, z, () => drawMotorbike(b, false, body), side * (Math.PI / 2 + rng.range(-0.75, -0.55)));
+    const tone = rng.range(0.8, 1.15);
+    b.at(x + i * 0.85, 0.2, z, () => b.stamp(assets.prop("bike_park", "lo"), tone), side * (Math.PI / 2 + rng.range(-0.75, -0.55)));
   }
   return count * 0.85 + 0.8;
 }
@@ -264,7 +263,7 @@ function rickshawStand(b: Batch, assets: Assets, x: number, z: number, rng: Rng)
     const kind = rng.chance(0.5) ? "rickshaw_fan" : "rickshaw_cycle";
     if (!assets.hasProp(kind)) continue;
     b.part();
-    b.at(x + i * 1.35, 0.02, z + rng.range(-0.3, 0.3), () => b.stamp(assets.prop(kind, "lo")), Math.PI / 2 + rng.range(-0.25, 0.25));
+    b.at(x + i * 1.35, 0.02, z + rng.range(-0.3, 0.3), () => b.stamp(assets.prop("rickshaw_park", "lo")), Math.PI / 2 + rng.range(-0.25, 0.25));
     if (rng.chance(0.5)) bystander(b, assets, x + i * 1.35 + 0.2, 0.36, z + 0.3, rng.range(0, 6), rng, true);
   }
   return count * 1.35 + 1;
@@ -293,7 +292,7 @@ function teaShack(b: Batch, assets: Assets, x: number, z: number, rng: Rng): num
 
 /** A car parked half on the open ground, nose to the road. */
 function parkedCar(b: Batch, assets: Assets, x: number, z: number, rng: Rng): number {
-  const kind = rng.pick(["sedan", "suv", "hatch", "taxi", "van"]);
+  const kind = rng.pick(["sedan", "wagon", "taxi"]);
   if (!assets.hasProp(kind)) return 0;
   b.part();
   b.at(x + 1.2, 0.02, z + 1.8, () => b.stamp(assets.prop(kind, "lo"), rng.range(0.95, 1.2)), Math.PI / 2 + rng.range(-0.15, 0.15));
@@ -301,7 +300,7 @@ function parkedCar(b: Batch, assets: Assets, x: number, z: number, rng: Rng): nu
 }
 
 /** Fills both pavements of one chunk, and the near side's yard. */
-export function furnishPavements(b: Batch, assets: Assets, rng: Rng, clear: Clear): void {
+export function furnishPavements(cells: Cells, assets: Assets, rng: Rng, clear: Clear): void {
   const free = (x0: number, x1: number, side: number): boolean => {
     for (let x = x0; x <= x1; x += 0.75) if (!clear(x, side)) return false;
     return clear(x1, side);
@@ -310,9 +309,15 @@ export function furnishPavements(b: Batch, assets: Assets, rng: Rng, clear: Clea
     let x = -CHUNK_LENGTH + rng.range(0.5, 3);
     let stops = 0;
     while (x < -1.5) {
+      // The near pavement is mostly behind the roofs in front of it: it gets half the clutter.
+      if (side > 0 && rng.chance(0.5)) {
+        x += rng.range(2, 5);
+        continue;
+      }
       const roll = rng.next();
       const begin = x;
       let used = 0;
+      const b = cells.at(x, side * ROAD_HALF);
       const tryItem = (length: number, draw: () => number): void => {
         if (x + length > -0.5 || !free(x - 0.3, x + length, side)) return;
         used = draw();
@@ -320,7 +325,7 @@ export function furnishPavements(b: Batch, assets: Assets, rng: Rng, clear: Clea
       if (roll < 0.1) tryItem(2.8, () => hawkerSheet(b, assets, x + 0.9, side, rng));
       else if (roll < 0.19) tryItem(2.6, () => umbrellaStall(b, assets, x + 0.6, side, rng));
       else if (roll < 0.29) tryItem(3.2, () => tarpStall(b, assets, x + 1.5, side, rng));
-      else if (roll < 0.39) tryItem(5.5, () => parkedBikes(b, x, side, rng));
+      else if (roll < 0.39) tryItem(5.5, () => parkedBikes(b, assets, x, side, rng));
       else if (roll < 0.44 && stops === 0) tryItem(5, () => {
         stops++;
         return busStop(b, assets, x + 2.4, side, rng);
@@ -349,9 +354,10 @@ export function furnishPavements(b: Batch, assets: Assets, rng: Rng, clear: Clea
     const begin = x;
     let used = 0;
     const ok = (length: number): boolean => x + length < -0.5 && free(x - 0.5, x + length, 1) && free(x - 0.5, x + length, 2);
-    if (roll < 0.26 && ok(6)) used = rickshawStand(b, assets, x + 0.8, yard + 1.6, rng);
-    else if (roll < 0.46 && ok(4.5)) used = teaShack(b, assets, x, FRONT_ROW - 2.6, rng);
-    else if (roll < 0.7 && ok(3)) used = parkedCar(b, assets, x, yard + 0.6, rng);
-    x = begin + Math.max(used, 1) + rng.range(1, 5);
+    const b = cells.at(x, yard);
+    if (roll < 0.14 && ok(6)) used = rickshawStand(b, assets, x + 0.8, yard + 1.6, rng);
+    else if (roll < 0.26 && ok(4.5)) used = teaShack(b, assets, x, FRONT_ROW - 2.6, rng);
+    else if (roll < 0.36 && ok(3)) used = parkedCar(b, assets, x, yard + 0.6, rng);
+    x = begin + Math.max(used, 2) + rng.range(2, 7);
   }
 }

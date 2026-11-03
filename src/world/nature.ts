@@ -22,13 +22,13 @@ interface Form {
 
 const FORMS: Record<Species, Form> = {
   // Rain tree: forks low into heavy limbs under a broad, flat-topped dome.
-  rain: { spread: 0.7, bottom: 0.5, top: 1.0, clump: 0.16, squash: 0.85, clumps: 22, fork: 0.34, limbs: 4, leaves: [0x9aa391, 0x8c9683, 0xa7af9d] },
+  rain: { spread: 0.7, bottom: 0.5, top: 1.0, clump: 0.11, squash: 0.8, clumps: 52, fork: 0.34, limbs: 4, leaves: [0x9aa391, 0x8c9683, 0xa7af9d] },
   // Mahogany: a dense, upright oval.
-  mahogany: { spread: 0.36, bottom: 0.38, top: 1.0, clump: 0.15, squash: 0.95, clumps: 20, fork: 0.4, limbs: 3, leaves: [0x87917e, 0x7d8774, 0x939c89] },
+  mahogany: { spread: 0.36, bottom: 0.38, top: 1.0, clump: 0.095, squash: 0.9, clumps: 40, fork: 0.4, limbs: 3, leaves: [0x87917e, 0x7d8774, 0x939c89] },
   // Krishnachura: a wide, shallow umbrella of feathery leaves.
-  krishnachura: { spread: 0.76, bottom: 0.6, top: 0.92, clump: 0.15, squash: 0.72, clumps: 22, fork: 0.45, limbs: 4, leaves: [0xa9b09f, 0x9aa290, 0xb6b4a6] },
+  krishnachura: { spread: 0.76, bottom: 0.6, top: 0.92, clump: 0.1, squash: 0.62, clumps: 56, fork: 0.45, limbs: 4, leaves: [0xa9b09f, 0x9aa290, 0xb6b4a6] },
   // Mango: a round, heavy crown down almost to head height.
-  mango: { spread: 0.5, bottom: 0.3, top: 0.98, clump: 0.17, squash: 0.9, clumps: 20, fork: 0.3, limbs: 3, leaves: [0x7f8a76, 0x76816d, 0x8b9580] },
+  mango: { spread: 0.5, bottom: 0.3, top: 0.98, clump: 0.11, squash: 0.85, clumps: 44, fork: 0.3, limbs: 3, leaves: [0x7f8a76, 0x76816d, 0x8b9580] },
 };
 
 /** A limb that bends on its way up: two bars with a knee between them. */
@@ -68,7 +68,7 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, d
   // is bumpy all round and nothing shows through.
   const crownY = h * (form.bottom + form.top) / 2;
   const crownH = h * (form.top - form.bottom) / 2;
-  const count = detail ? form.clumps + rng.int(-3, 3) : Math.ceil(form.clumps / 4);
+  const count = detail ? form.clumps + rng.int(-6, 6) : Math.ceil(form.clumps / 3);
   const centres: Array<{ at: Vec3; up: number }> = [];
   for (let i = 0; i < count; i++) {
     // Even cover of the upper part of a sphere: a golden-angle spiral down from the crown.
@@ -92,14 +92,14 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, d
 
   const [light, mid, dark] = [form.leaves[2]!, form.leaves[0]!, form.leaves[1]!];
   b.as(Surface.foliage, () => {
-    b.part();
-    b.blob(x, crownY - crownH * 0.1, z, radius * 0.86, crownH * 0.9, radius * 0.86, dark, 0.3, rng.int(1, 1 << 30), detail ? 1 : 0);
+    b.leafPart();
+    b.blob(x, crownY - crownH * 0.1, z, radius * 0.9, crownH * 0.92, radius * 0.9, dark, 0.45, rng.int(1, 1 << 30), 1);
     for (const { at, up } of centres) {
-      const r = h * form.clump * rng.range(0.85, 1.25);
+      const r = h * form.clump * rng.range(0.7, 1.4);
       // Sunlit clumps on top are lighter; those under the rim are in the crown's own shade.
       const color = up > 0.45 ? light : up > -0.1 ? mid : dark;
       // One part for the whole crown: overlapping clumps are inked by depth, not each outlined.
-      b.blob(at[0], at[1], at[2], r, r * form.squash, r, color, 0.9, rng.int(1, 1 << 30), detail ? 2 : 1);
+      b.blob(at[0], at[1], at[2], r, r * form.squash, r, color, 0.95, rng.int(1, 1 << 30), 1);
     }
   });
 }

@@ -80,7 +80,7 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
   // Seen from outside: everyone in one mesh.
   const lo = (() => {
     const batch = new Batch(1 << 13);
-    for (const person of crew) batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, "lo")), person.facing);
+    for (const person of crew) batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, "far")), person.facing);
     const mesh = new Mesh(toBufferGeometry(batch.finish()), material);
     mesh.frustumCulled = false;
     car.riders.add(mesh);

@@ -21,6 +21,7 @@ console.error = quiet;
 const [source, output, ...only] = process.argv.slice(2);
 const HI_TRIANGLES = 3400;
 const LO_TRIANGLES = 700;
+const FAR_TRIANGLES = 260;
 const WALK_FRAMES = 8;
 /** Quantisation of positions: 1 unit is 1/4096 of a metre. */
 const QUANT = 4096;
@@ -221,7 +222,7 @@ async function bakeAvatar(name) {
     const [result] = MeshoptSimplifier.simplifyWithAttributes(indices, simplifyPositions, 3, greys, 1, [0.6], null, target * 3, 0.03, []);
     return result;
   };
-  const lodIndices = { hi: simplified(HI_TRIANGLES), lo: simplified(LO_TRIANGLES) };
+  const lodIndices = { hi: simplified(HI_TRIANGLES), lo: simplified(LO_TRIANGLES), far: simplified(FAR_TRIANGLES) };
   const compact = (list) => {
     const remap = new Map();
     const used = [];
@@ -235,7 +236,7 @@ async function bakeAvatar(name) {
     });
     return { used, indices: out };
   };
-  const lods = { hi: compact(lodIndices.hi), lo: compact(lodIndices.lo) };
+  const lods = { hi: compact(lodIndices.hi), lo: compact(lodIndices.lo), far: compact(lodIndices.far) };
 
   const pelvis = findBone(root, "pelvis");
   const headBone = findBone(root, "_head", " head");
@@ -291,9 +292,7 @@ async function bakeAvatar(name) {
   const poses = {};
   const stills = (key, make) => {
     make();
-    const hi = capture("hi");
-    const lo = capture("lo");
-    poses[key] = { hi, lo };
+    poses[key] = { hi: capture("hi"), lo: capture("lo"), far: capture("far") };
   };
 
   stills("stand", () => setPose(ANIM(gender, "idle_neutral_01"), 0.3));
@@ -408,7 +407,7 @@ for (const name of names) {
   const started = Date.now();
   const avatar = await bakeAvatar(name);
   const entry = { name, female: avatar.female, lods: {}, poses: {}, walk: [], walkStride: +avatar.walkStride.toFixed(3) };
-  for (const lod of ["hi", "lo"]) {
+  for (const lod of ["hi", "lo", "far"]) {
     const data = avatar.lods[lod];
     entry.lods[lod] = {
       vertices: data.grey.length,
@@ -419,7 +418,7 @@ for (const name of names) {
     };
   }
   for (const [pose, still] of Object.entries(avatar.poses)) {
-    entry.poses[pose] = { hi: push(packStill(still.hi, avatar.lods.hi.indices)), lo: push(packStill(still.lo, avatar.lods.lo.indices)), top: +still.hi.top.toFixed(3) };
+    entry.poses[pose] = { hi: push(packStill(still.hi, avatar.lods.hi.indices)), lo: push(packStill(still.lo, avatar.lods.lo.indices)), far: push(packStill(still.far, avatar.lods.far.indices)), top: +still.hi.top.toFixed(3) };
   }
   for (const still of avatar.walk) entry.walk.push(push(packStill(still, avatar.lods.lo.indices)));
   index.avatars.push(entry);

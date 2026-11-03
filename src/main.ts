@@ -138,7 +138,7 @@ const riders = train.cars.map((car) => createRiders(car, crews[car.index]!, asse
 opposing.cars.forEach((car, index) => {
   const batch = new Batch(1 << 13);
   for (const person of crews[(index + 3) % 6]!) {
-    batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, "lo")), person.facing);
+    batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, "far")), person.facing);
   }
   const mesh = new Mesh(toBufferGeometry(batch.finish()), pipeline.solid);
   mesh.frustumCulled = false;
@@ -529,6 +529,7 @@ function updateTags(dt: number): void {
 }
 
 let last = performance.now();
+const cpu = { before: 0, traffic: 0, tags: 0, render: 0 };
 const frozen = debug && params.has("freeze");
 /** Dev: the train stays put and the world around it keeps living, for watching one junction. */
 const held = debug && params.has("hold");
@@ -540,6 +541,7 @@ function frame(now: number): void {
   const moving = !frozen && !reducedMotion;
   if (moving && !held) distance += CRUISE * dt;
 
+  const t0 = performance.now();
   world.update(distance, 320, 260);
   train.update(time, distance);
 
@@ -549,7 +551,9 @@ function frame(now: number): void {
   updateCameraAim(time);
   rig.update(reducedMotion ? 1 : dt, innerWidth / innerHeight);
   world.cull(rig.camera);
+  const t1 = performance.now();
   traffic.update(distance, moving ? time : 0, moving ? dt : 0, rig.camera);
+  const t2 = performance.now();
   updateTags(dt);
   adaptQuality(dt);
   pipeline.setViewWidth(rig.width);
@@ -564,7 +568,16 @@ function frame(now: number): void {
   opposing.group.visible = !reducedMotion && opposingX > -420;
   if (opposing.group.visible) opposing.update(time, distance * 2);
 
+  const t3 = performance.now();
   pipeline.render(scene, rig.camera, rig.focusDepth, { world: world.group, distance, cull: (camera) => world.cull(camera) });
+  if (debug) {
+    const t4 = performance.now();
+    const ease = (old: number, now: number): number => old * 0.95 + now * 0.05;
+    cpu.before = ease(cpu.before, t1 - t0);
+    cpu.traffic = ease(cpu.traffic, t2 - t1);
+    cpu.tags = ease(cpu.tags, t3 - t2);
+    cpu.render = ease(cpu.render, t4 - t3);
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -578,6 +591,7 @@ if (debug) {
       train,
       traffic,
       opposing,
+      cpu,
       seed,
       focusOn,
       targets,

@@ -43,7 +43,26 @@ function lumaAt(image, u, v) {
   return (0.3 * image.data[i] + 0.59 * image.data[i + 1] + 0.11 * image.data[i + 2]) / 255;
 }
 
-function collect(document) {
+/** Whether a primitive belongs to this prop, for files that hold several models or parts to leave out. */
+function wanted(prop, name, position, world) {
+  if (prop.keepNodes && !prop.keepNodes.some((n) => name.startsWith(n))) return false;
+  if (prop.dropNodes && prop.dropNodes.some((n) => name.startsWith(n))) return false;
+  if (prop.xRange) {
+    const p = [0, 0, 0];
+    const v = new Vector3();
+    let sum = 0;
+    const count = position.getCount();
+    for (let i = 0; i < count; i++) {
+      position.getElement(i, p);
+      sum += v.set(p[0], p[1], p[2]).applyMatrix4(world).x;
+    }
+    const x = sum / count;
+    if (x < prop.xRange[0] || x > prop.xRange[1]) return false;
+  }
+  return true;
+}
+
+function collect(document, prop) {
   const positions = [];
   const greys = [];
   const parts = [];
@@ -58,7 +77,7 @@ function collect(document) {
       for (const primitive of mesh.listPrimitives()) {
         if (primitive.getMode() !== 4) continue;
         const position = primitive.getAttribute("POSITION");
-        if (!position) continue;
+        if (!position || !wanted(prop, node.getName(), position, world)) continue;
         const uv = primitive.getAttribute("TEXCOORD_0");
         const material = primitive.getMaterial();
         const factor = material?.getBaseColorFactor?.() ?? [1, 1, 1, 1];
@@ -224,7 +243,7 @@ function expand(mesh, creaseDegrees) {
 }
 
 /** Every assembly keeps a budget in proportion to its size, and tiny fittings can vanish whole. */
-function simplifyPartByPart(mesh, target) {
+function simplifyPartByPart(mesh, target, lockBorder, lockError = 0.08) {
   const byPart = new Map();
   for (let i = 0; i < mesh.indices.length; i += 3) {
     const part = mesh.parts[mesh.indices[i]];
@@ -246,13 +265,13 @@ function simplifyPartByPart(mesh, target) {
   const total = entries.reduce((sum, entry) => sum + entry.area ** 0.7, 0);
   const out = [];
   for (const { list, area: partArea } of entries) {
-    if (out.length / 3 >= target) break;
+    if (!lockBorder && out.length / 3 >= target) break;
     const budget = Math.max(4, Math.round((target * partArea ** 0.7) / total));
     const indices = Uint32Array.from(list);
     const count = Math.min(budget, indices.length / 3);
-    let [result] = MeshoptSimplifier.simplify(indices, mesh.positions, 3, count * 3, 0.6, []);
+    let [result] = MeshoptSimplifier.simplify(indices, mesh.positions, 3, count * 3, lockBorder ? lockError : 0.6, lockBorder ? ["LockBorder"] : []);
     // Open, non-manifold scan-like parts keep their borders; only the sloppy pass can reduce those.
-    if (result.length > count * 4.5) [result] = MeshoptSimplifier.simplifySloppy(indices, mesh.positions, 3, null, count * 3, 0.6);
+    if (!lockBorder && result.length > count * 4.5) [result] = MeshoptSimplifier.simplifySloppy(indices, mesh.positions, 3, null, count * 3, 0.6);
     for (const v of result.length ? result : indices.subarray(0, 12)) out.push(v);
   }
   return Uint32Array.from(out);
@@ -275,7 +294,7 @@ const push = (typed) => {
 const index = { props: {} };
 for (const prop of config.props) {
   const document = await io.read(prop.file);
-  const raw = dropBackdrop(collect(document), prop.dropAbove, prop.dropExtent, prop.keepRadius);
+  const raw = dropBackdrop(collect(document, prop), prop.dropAbove, prop.dropExtent, prop.keepRadius);
   const source = raw.indices.length / 3;
   // Normalise: rotate, then rest on the ground and centre on the origin, then scale to size.
   const rotation = new Quaternion().setFromEuler(new Euler(...(prop.rotate ?? [0, 0, 0]).map((d) => (d * Math.PI) / 180), "YXZ"));
@@ -300,7 +319,7 @@ for (const prop of config.props) {
   const entry = { size: size.clone().multiplyScalar(scale).toArray().map((x, k) => +(x * stretch[k]).toFixed(3)), source, lods: {} };
   for (const [lod, target] of Object.entries(prop.lods ?? { hi: 2500, lo: 500 })) {
     const count = Math.min(target, welded.indices.length / 3);
-    const simplified = prop.perPart ? simplifyPartByPart(welded, count) : MeshoptSimplifier.simplifyWithAttributes(welded.indices, welded.positions, 3, welded.greys, 1, [0.5], null, count * 3, prop.error ?? 0.04, [])[0];
+    const simplified = prop.perPart ? simplifyPartByPart(welded, count, prop.lockBorder, prop.lockError) : MeshoptSimplifier.simplifyWithAttributes(welded.indices, welded.positions, 3, welded.greys, 1, [0.5], null, count * 3, prop.error ?? 0.04, [])[0];
     const expanded = expand({ ...welded, indices: simplified }, prop.crease ?? 38);
     entry.lods[lod] = {
       vertices: expanded.grey.length,

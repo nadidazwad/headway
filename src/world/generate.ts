@@ -2,7 +2,7 @@ import type { Assets } from "../assets";
 import { Batch, type MeshData } from "../geometry";
 import { Rng, hashSeed } from "../shared/rng";
 import { apartmentBlock, brickBlock, glassTower, stackedBlock, type Plot } from "./buildings";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, localX, type Context } from "./layout";
+import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, FRONT_ROW, SIDEWALK_HALF, localX, type Context, type Cells } from "./layout";
 import { BRIDGE_HALF, STAIR_RUN, chunkPlan } from "./plan";
 import { footBridge, fruitCart, mosque, pond, teaStall } from "./landmarks";
 import { buildRoad, buildSideStreet, buildStreetFurniture, buildBreakers } from "./street";
@@ -20,7 +20,7 @@ export interface ChunkData {
 const CELL = 20;
 
 /** Hands out a separate mesh per cell of the chunk's plan. */
-class Pieces {
+class Pieces implements Cells {
   private readonly cells = new Map<number, Batch>();
 
   at(x: number, z: number): Batch {
@@ -126,6 +126,7 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
   b.lines = true;
   street.lines = true;
   const pieces = new Pieces();
+  const streetLife = new Pieces();
 
   const plan = chunkPlan(seed, index);
   const toLocal = (distance: number): number => localX(context, distance);
@@ -151,18 +152,19 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
     });
   }
   const clear = (x: number, side: number): boolean => !blocked.some((r) => x > r.from && x < r.to && (r.side === 0 || r.side === side));
-  buildStreetFurniture(street, context, rng, clear);
+  buildStreetFurniture(streetLife, context, rng, clear);
 
   // Street trade, and now and then a foot-over-bridge.
   for (let i = 0; i < 3; i++) {
     const x = rng.range(-CHUNK_LENGTH + 3, -3);
     const side = rng.chance(0.5) ? 1 : -1;
     if (!clear(x - 2, side) || !clear(x + 2, side)) continue;
-    if (rng.chance(0.55)) teaStall(street, assets, x, side, rng);
-    else fruitCart(street, assets, x, side, rng);
+    const stall = streetLife.at(x, side * 15);
+    if (rng.chance(0.55)) teaStall(stall, assets, x, side, rng);
+    else fruitCart(stall, assets, x, side, rng);
   }
   if (bridge) footBridge(street, assets, toLocal(bridge.centre), [-bridge.stairs[0], -bridge.stairs[1]], rng);
-  furnishPavements(street, assets, rng, clear);
+  furnishPavements(streetLife, assets, rng, clear);
 
   // Front rows of blocks, then the deep rows behind. A narrow lane separates each row.
   const xMin = -CHUNK_LENGTH;
@@ -184,7 +186,7 @@ export function generateChunk(seed: number, index: number, assets: Assets): Chun
     first = false;
   }
 
-  const batches = [b, street, ...pieces.all];
+  const batches = [b, street, ...streetLife.all, ...pieces.all];
   const parts = batches.filter((batch) => batch.triangles > 0).map((batch) => batch.finish());
   return { index, parts, triangles: batches.reduce((sum, batch) => sum + batch.triangles, 0) };
 }

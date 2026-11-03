@@ -1,7 +1,7 @@
 import { Surface, type Batch, type Vec3 } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Context } from "./layout";
+import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Cells, type Context } from "./layout";
 import { tree } from "./nature";
 import { HUMP_HALF, humpHeight, type Humps } from "./plan";
 
@@ -173,7 +173,7 @@ function sagging(a: Vec3, b: Vec3, sag: number): Vec3[] {
 }
 
 /** Street life along the pavement: trees, and concrete poles with their famous wire tangles. */
-export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear: (x: number, side: number) => boolean): void {
+export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, clear: (x: number, side: number) => boolean): void {
   const clearX = (x: number, side: number): boolean => clear(x - 1.2, side) && clear(x + 1.2, side);
   const poleStep = 36;
   for (const side of [1, -1]) {
@@ -181,6 +181,7 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
     for (const distance of latticeIn(context, poleStep, side > 0 ? 8 : 26)) {
       const x = localX(context, distance);
       if (!clearX(x, side)) continue;
+      const b = cells.at(x, z);
       b.part();
       b.bar([x, 0.2, z], [x, 9.2, z], 0.14, 0.09, 0xa9a59a, 6);
       b.part();
@@ -210,6 +211,7 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
       const x = localX(context, distance);
       if (!clearX(x, side)) continue;
       const lampZ = side * (ROAD_HALF + 0.3);
+      const b = cells.at(x, lampZ);
       b.part();
       b.bar([x, 0.2, lampZ], [x, 8, lampZ], 0.07, 0.05, 0x7b8588, 6);
       b.bar([x, 8, lampZ], [x, 8.4, lampZ - side * 1.3], 0.04, 0.03, 0x7b8588, 5);
@@ -224,7 +226,7 @@ export function buildStreetFurniture(b: Batch, context: Context, rng: Rng, clear
       // In the kerb band, with the poles, so the strip people walk in stays clear.
       const treeZ = side * (ROAD_HALF + 0.85);
       const h = rng.range(6.5, side > 0 ? 8.5 : 11);
-      tree(b, x, treeZ, h, rng);
+      tree(cells.at(x, treeZ), x, treeZ, h, rng);
     }
   }
 }

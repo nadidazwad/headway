@@ -155,6 +155,12 @@ export class Batch {
     return this;
   }
 
+  /** Starts a crown of leaves: the ink pass keeps its lines faint until it meets something else. */
+  leafPart(): this {
+    this.partId = 255;
+    return this;
+  }
+
   /** Draws whatever `draw` adds as made of `kind`, then goes back to what it was before. */
   as(kind: SurfaceKind, draw: () => void): this {
     const before = this.surfaceId;
@@ -403,6 +409,8 @@ export class Batch {
       this.vertex(x + c * r1, y + height, z + s * r1, nx, ny, nz, color);
     }
     for (let i = 0; i < segments; i++) {
+      const mid = ((i + 0.5) / segments) * Math.PI * 2;
+      if (this.isHidden(Math.cos(mid) * normalScale, slope * normalScale, Math.sin(mid) * normalScale)) continue;
       const a = first + i * 2;
       this.pushIndices(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
@@ -469,7 +477,10 @@ export class Batch {
       }
     }
     for (let row = 0; row < rows; row++) {
+      const midPhi = ((row + 0.5) / rows) * Math.PI;
       for (let i = 0; i < segments; i++) {
+        const midTheta = ((i + 0.5) / segments) * Math.PI * 2;
+        if (this.isHidden(Math.sin(midPhi) * Math.cos(midTheta), Math.cos(midPhi), Math.sin(midPhi) * Math.sin(midTheta))) continue;
         const a = first + row * (segments + 1) + i;
         const b = a + segments + 1;
         this.pushIndices(a, a + 1, b, b, a + 1, b + 1);
@@ -523,7 +534,12 @@ export class Batch {
       const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
       this.vertex(p[0]!, p[1]!, p[2]!, n[0]! / l, n[1]! / l, n[2]! / l, color);
     });
-    for (const [a, b, c] of faces) this.pushIndices(first + a!, first + b!, first + c!);
+    for (const [a, b, c] of faces) {
+      const n = normals[a!]!;
+      const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1;
+      if (this.isHidden(n[0]! / l, n[1]! / l, n[2]! / l)) continue;
+      this.pushIndices(first + a!, first + b!, first + c!);
+    }
     return this;
   }
 
@@ -552,6 +568,10 @@ export class Batch {
       this.vertex(b[0] + nx * r1, b[1] + ny * r1, b[2] + nz * r1, nx, ny, nz, color);
     }
     for (let i = 0; i < sides; i++) {
+      const mid = ((i + 0.5) / sides) * Math.PI * 2;
+      const c = Math.cos(mid);
+      const s = Math.sin(mid);
+      if (this.isHidden(ux * c + vx * s, uy * c + vy * s, uz * c + vz * s)) continue;
       const p = first + i * 2;
       this.pushIndices(p, p + 2, p + 1, p + 1, p + 2, p + 3);
     }
@@ -571,7 +591,13 @@ export class Batch {
     }
     this.partId = base;
     this.part();
-    for (let i = 0; i < mesh.index.length; i++) this.indices[this.indexCount++] = first + mesh.index[i]!;
+    for (let i = 0; i < mesh.index.length; i += 3) {
+      const a = mesh.index[i]!;
+      if (this.isHidden(mesh.nor[a * 3]! / 127, mesh.nor[a * 3 + 1]! / 127, mesh.nor[a * 3 + 2]! / 127)) continue;
+      this.indices[this.indexCount++] = first + a;
+      this.indices[this.indexCount++] = first + mesh.index[i + 1]!;
+      this.indices[this.indexCount++] = first + mesh.index[i + 2]!;
+    }
     return this;
   }
 

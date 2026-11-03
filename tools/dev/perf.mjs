@@ -29,7 +29,7 @@ await sleep(1500);
 if (process.env.PRE) await ev(process.env.PRE);
 const renderer = await ev(`(()=>{const c=document.createElement('canvas').getContext('webgl2');const e=c.getExtension('WEBGL_debug_renderer_info');return e?c.getParameter(e.UNMASKED_RENDERER_WEBGL):'?'})()`);
 const result = await ev(`new Promise(res=>{const t=[];let l=performance.now();const end=l+${+seconds*1000};const gl=window.__metro.pipeline.renderer.getContext();const px=new Uint8Array(4);function f(n){gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);t.push(n-l);l=n;if(n<end)requestAnimationFrame(f);else{t.sort((a,b)=>a-b);res({frames:t.length,avg:t.reduce((a,b)=>a+b,0)/t.length,p50:t[t.length>>1],p95:t[Math.floor(t.length*.95)],p99:t[Math.floor(t.length*.99)]})}}requestAnimationFrame(f)})`);
-const info = await ev(`(()=>{const m=window.__metro,i=m.pipeline.renderer.info;return {tris:m.world.triangles,drawn:m.world.drawnTriangles,chunks:m.world.loaded,geoms:i.memory.geometries,pr:m.pipeline.pixelRatio}})()`);
+const info = await ev(`(()=>{const m=window.__metro,i=m.pipeline.renderer.info;return {tris:m.world.triangles,drawn:m.world.drawnTriangles,chunks:m.world.loaded,geoms:i.memory.geometries,gpu:m.pipeline.stats.gpu,cpu:m.cpu,calls:m.pipeline.stats.mainCalls,main:m.pipeline.stats.mainTriangles,shadow:m.pipeline.stats.shadowTriangles,pr:m.pipeline.pixelRatio}})()`);
 const post = process.env.POST ? await ev(process.env.POST) : undefined;
 console.log(JSON.stringify({ gpu, renderer, ...result, ...info, post }));
 p.kill("SIGKILL");

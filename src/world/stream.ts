@@ -12,6 +12,7 @@ export interface World {
   /** Hides every piece of city outside the camera's view. Call after the camera has moved. */
   cull(camera: Camera): void;
   readonly drawnTriangles: number;
+  readonly breakdown: { viaduct: number; street: number; blocks: number; biggest: number };
   /** How many chunks needed for the current view have not arrived yet. */
   readonly pending: number;
   readonly triangles: number;
@@ -164,6 +165,22 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
     },
     get drawnTriangles() {
       return drawn;
+    },
+    /** Dev: triangles the camera sees now, split into the line itself, the street and the blocks. */
+    get breakdown() {
+      const out = { viaduct: 0, street: 0, blocks: 0, biggest: 0 };
+      for (const chunk of meshes.values()) {
+        chunk.parts.forEach((part, i) => {
+          if (!part.mesh.visible) return;
+          if (i === 0) out.viaduct += part.triangles;
+          else if (i === 1) out.street += part.triangles;
+          else {
+            out.blocks += part.triangles;
+            out.biggest = Math.max(out.biggest, part.triangles);
+          }
+        });
+      }
+      return out;
     },
     get pending() {
       return pending();

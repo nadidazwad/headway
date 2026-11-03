@@ -6,7 +6,7 @@ import { Rng, hashSeed } from "../shared/rng";
 import { junctionsBetween } from "../world/plan";
 import { ROAD_HALF } from "../world/layout";
 import { CROSSERS_PER_JUNCTION, CROSS_MIX, createFlow, type Kind } from "./flow";
-import { buildVehicles } from "./vehicles";
+import { bicycleWithRider, motorbikeWithRider, pedalVan } from "./vehicles";
 
 export interface Traffic {
   group: Group;
@@ -18,7 +18,7 @@ const AHEAD = 220;
 const BEHIND = 300;
 /** Junctions in the window at once, at most, for sizing the pools of crossing vehicles. */
 const JUNCTIONS_AT_ONCE = 6;
-const KINDS: Kind[] = ["sedan", "suv", "hatch", "taxi", "van", "truck", "delivery", "cng", "rickshaw_fan", "rickshaw_cycle", "bus_town", "bike"];
+const KINDS: Kind[] = ["sedan", "wagon", "e180", "suv", "taxi", "van", "cng", "rickshaw_fan", "rickshaw_cycle", "bus_town", "bike", "bicycle", "pedal_goods", "pedal_people"];
 
 const RICKSHAW_SEATS = {
   rickshaw_fan: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
@@ -40,9 +40,9 @@ const sideStreetY = (z: number): number => {
 function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
   const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
   const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_15");
-  b.at(seat.pullerX, seat.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "lo"), 0.9), -Math.PI / 2);
+  b.at(seat.pullerX, seat.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "far"), 0.9), -Math.PI / 2);
   const fare = rng.int(0, assets.avatars.length - 1);
-  b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "lo"), 1.1), -Math.PI / 2);
+  b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "far"), 1.1), -Math.PI / 2);
 }
 
 /**
@@ -62,19 +62,19 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
   for (let i = 0; i < 600; i++) flow.step(0.1, i * 0.1 - 60, startDistance - BEHIND, startDistance + AHEAD);
 
   const crossShare = (kind: Kind): number => (CROSS_MIX.includes(kind) ? JUNCTIONS_AT_ONCE * CROSSERS_PER_JUNCTION : 0);
-  const bakedBike = buildVehicles().bike;
   const instanced: InstancedMesh[] = KINDS.map((name) => {
     const count = flow.vehicles.filter((v) => v.kind === name).length + crossShare(name);
-    let geometry;
-    if (name === "bike") {
-      geometry = toBufferGeometry(bakedBike);
-    } else {
-      const b = new Batch(1 << 12);
-      b.cull = false;
+    const b = new Batch(1 << 12);
+    b.cull = false;
+    if (name === "bike") motorbikeWithRider(b, assets, rng);
+    else if (name === "bicycle") bicycleWithRider(b, assets, rng);
+    else if (name === "pedal_goods") pedalVan(b, assets, "goods", rng);
+    else if (name === "pedal_people") pedalVan(b, assets, "people", rng);
+    else {
       b.stamp(assets.prop(name, "lo"));
       if (name === "rickshaw_fan" || name === "rickshaw_cycle") seatRiders(b, assets, name, rng);
-      geometry = toBufferGeometry(b.finish());
     }
+    const geometry = toBufferGeometry(b.finish());
     const mesh = new InstancedMesh(geometry, material, Math.max(count, 1));
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.frustumCulled = false;

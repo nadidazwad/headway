@@ -16,8 +16,8 @@ interface PeopleIndex {
   avatars: Array<{
     name: string;
     female: boolean;
-    lods: { hi: LodEntry; lo: LodEntry };
-    poses: Record<PersonPose, { hi: number; lo: number; top: number }>;
+    lods: { hi: LodEntry; lo: LodEntry; far: LodEntry };
+    poses: Record<PersonPose, { hi: number; lo: number; far: number; top: number }>;
     walk: number[];
     /** Metres one full walk cycle covers: two steps. */
     walkStride: number;
@@ -40,7 +40,7 @@ interface PropIndex {
 
 export interface Assets {
   avatars: ReadonlyArray<{ name: string; female: boolean; walkStride: number }>;
-  person(avatar: number, pose: PersonPose, lod: "hi" | "lo"): Stampable;
+  person(avatar: number, pose: PersonPose, lod: "hi" | "lo" | "far"): Stampable;
   walkFrame(avatar: number, frame: number): Stampable;
   readonly walkFrames: number;
   /** Height of the top of the head in this pose, in metres. */
@@ -74,7 +74,7 @@ async function load(base: string): Promise<Assets> {
   const view = new DataView(peopleBytes);
   const cache = new Map<string, Stampable>();
 
-  const decodePerson = (avatarIndex: number, lodName: "hi" | "lo", offset: number): Stampable => {
+  const decodePerson = (avatarIndex: number, lodName: "hi" | "lo" | "far", offset: number): Stampable => {
     const lod = peopleIndex.avatars[avatarIndex]!.lods[lodName];
     const count = lod.vertices;
     const pos = new Float32Array(count * 3);

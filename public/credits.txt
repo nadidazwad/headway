@@ -7,9 +7,6 @@ People
   https://github.com/microsoft/Microsoft-Rocketbox
   See people/LICENSE-rocketbox.txt
 
-Cars, vans and trucks
-  Car Kit, Kenney (kenney.nl), CC0
-
 Vehicles, mosques and tower blocks, under Creative Commons Attribution
   CNG by asrafullislamsiam (CC Attribution)
   https://sketchfab.com/3d-models/cng-011baf8efab94b37988e16756951a2b1
@@ -29,6 +26,20 @@ Vehicles, mosques and tower blocks, under Creative Commons Attribution
   https://sketchfab.com/3d-models/low-poly-soviet-apartment-building-8k-05229ac1d1f94e6c8cacaad91110c602
   Low Poly Autorickshaw aka TukTuk by Nirmal.Justin (CC Attribution)
   https://sketchfab.com/3d-models/low-poly-autorickshaw-aka-tuktuk-c7c87455ad014b3f9fc8c9fb2d164a61
+  2014 Toyota Corolla E180 EU (with interior) by Armored Wave (CC Attribution)
+  https://sketchfab.com/3d-models/2014-toyota-corolla-e180-eu-with-interior-36f95efb0585464cae43a25a3b3392e8
+  1995 Toyota Corolla DX (E100) by ImperialBlue3D (CC Attribution)
+  https://sketchfab.com/3d-models/1995-toyota-corolla-dx-e100-6ed25676dd3e460d849dfce9beb73972
+  Lowpoly Sedan & Wagon by Han66st (CC Attribution)
+  https://sketchfab.com/3d-models/lowpoly-sedan-wagon-e11a46478c674b279fe9d299b2125c30
+  Mitsubishi Pajero MK3 3-Door 1999-2006 by Merc_TV (CC Attribution)
+  https://sketchfab.com/3d-models/mitsubishi-pajero-mk3-3-door-1999-2006-2899f09c8be24b69b6f1c93c865a6d17
+  2005 Toyota Hiace by DisneyCars (CC Attribution)
+  https://sketchfab.com/3d-models/2005-toyota-hiace-a066fa74844c43878f7174d3ade85773
+  Bajaj pulsar 150 by @ShreyanshChaurasia_12 (CC Attribution)
+  https://sketchfab.com/3d-models/bajaj-pulsar-150-06fac75c72ed4780a19034447c81e72c
+  Low-Poly Vintage Bicycle Model by wasabicats (CC Attribution)
+  https://sketchfab.com/3d-models/low-poly-vintage-bicycle-model-5297f7525763435c8ef2e97fd3a6d30d
 
 Facts about the line
   Wikipedia, MRT Line 6; OpenStreetMap contributors (ODbL) for reference only.

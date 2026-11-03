@@ -14,7 +14,7 @@ const IDLE_POSES: readonly PersonPose[] = ["stand", "look", "phone", "music", "b
 export function bystander(b: Batch, assets: Assets, x: number, y: number, z: number, facing: number, rng: Rng, seated = false): void {
   const avatar = rng.int(0, assets.avatars.length - 1);
   const pose = seated ? "sit" : rng.pick(IDLE_POSES);
-  b.at(x, y, z, () => b.stamp(assets.person(avatar, pose, "lo")), facing);
+  b.at(x, y, z, () => b.stamp(assets.person(avatar, pose, "far")), facing);
 }
 
 /** A neighbourhood mosque: mint and white, dome and a slender minaret with its balconies. */

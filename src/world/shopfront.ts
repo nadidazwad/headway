@@ -30,7 +30,7 @@ const UPPER_KINDS: readonly ShopKind[] = ["coaching", "coaching", "clinic", "cli
 /** Somebody at the shop: `lo` everywhere, since nobody sees a shopkeeper up close. */
 function person(b: Batch, f: Frontage, x: number, y: number, z: number, facing: number, pose: PersonPose, tone = 1): void {
   const avatar = f.rng.int(0, f.assets.avatars.length - 1);
-  b.at(x, y, z, () => b.stamp(f.assets.person(avatar, pose, "lo"), tone), facing);
+  b.at(x, y, z, () => b.stamp(f.assets.person(avatar, pose, "far"), tone), facing);
 }
 
 function stool(b: Batch, x: number, z: number, color: number): void {

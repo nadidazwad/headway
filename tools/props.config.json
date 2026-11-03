@@ -1,6 +1,173 @@
 {
 "props": [
 {
+"key": "rickshaw_park",
+"file": "asset-src/sketchfab/rickshaw_fan/model.glb",
+"perPart": true,
+"length": 2.7,
+"lods": {
+"lo": 900
+},
+"crease": 34
+},
+{
+"key": "bike_park",
+"file": "asset-src/sketchfab/pulsar/model.glb",
+"perPart": true,
+"length": 2.0,
+"lods": {
+"lo": 800
+},
+"crease": 34,
+"rotate": [
+0,
+0,
+0
+]
+},
+{
+"key": "sedan",
+"file": "asset-src/sketchfab/sedan_wagon/model.glb",
+"xRange": [
+-9,
+0
+],
+"length": 4.35,
+"lods": {
+"lo": 3000
+},
+"crease": 34,
+"rotate": [
+0,
+-90,
+0
+],
+"error": 0.05
+},
+{
+"key": "wagon",
+"file": "asset-src/sketchfab/sedan_wagon/model.glb",
+"xRange": [
+0,
+9
+],
+"length": 4.3,
+"lods": {
+"lo": 3000
+},
+"crease": 34,
+"rotate": [
+0,
+-90,
+0
+],
+"error": 0.05
+},
+{
+"key": "taxi",
+"file": "asset-src/sketchfab/corolla_e100/model.glb",
+"dropNodes": [
+"Spoiler"
+],
+"length": 4.3,
+"lods": {
+"lo": 3000
+},
+"crease": 34,
+"rotate": [
+0,
+-90,
+0
+],
+"error": 0.06
+},
+{
+"key": "e180",
+"file": "asset-src/sketchfab/corolla_e180/model.glb",
+"perPart": true,
+"lockBorder": true,
+"length": 4.55,
+"lods": {
+"lo": 3000
+},
+"crease": 34,
+"rotate": [
+0,
+-90,
+0
+],
+"dropNodes": [
+"corolla_e180_interior",
+"corolla_e180_furniture",
+"corolla_e180_dashboard",
+"corolla_e180_steering",
+"corolla_e180_body_invisi",
+"corolla_e180_body_fabric"
+],
+"lockError": 0.3
+},
+{
+"key": "suv",
+"file": "asset-src/sketchfab/pajero_mk3/model.glb",
+"perPart": true,
+"lockBorder": true,
+"length": 4.3,
+"lods": {
+"lo": 3000
+},
+"crease": 34,
+"rotate": [
+0,
+-90,
+0
+],
+"lockError": 0.3
+},
+{
+"key": "van",
+"file": "asset-src/sketchfab/hiace_2005/model.glb",
+"length": 4.9,
+"lods": {
+"lo": 3400
+},
+"crease": 34,
+"rotate": [
+0,
+90,
+0
+],
+"error": 0.1
+},
+{
+"key": "pulsar",
+"file": "asset-src/sketchfab/pulsar/model.glb",
+"perPart": true,
+"length": 2.0,
+"lods": {
+"lo": 2200
+},
+"crease": 34,
+"rotate": [
+0,
+0,
+0
+]
+},
+{
+"key": "bicycle",
+"file": "asset-src/sketchfab/bicycle_vintage/model.glb",
+"length": 1.75,
+"lods": {
+"lo": 9999
+},
+"crease": 40,
+"rotate": [
+0,
+90,
+0
+]
+},
+{
 "key": "cng",
 "file": "asset-src/sketchfab/cng/model.glb",
 "length": 2.9,
@@ -30,146 +197,6 @@
 "lo": 700
 },
 "error": 0.08,
-"crease": 30
-},
-{
-"key": "sedan",
-"file": "asset-src/kenney/car/Models/GLB format/sedan.glb",
-"length": 4.4,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "suv",
-"file": "asset-src/kenney/car/Models/GLB format/suv.glb",
-"length": 4.7,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "hatch",
-"file": "asset-src/kenney/car/Models/GLB format/hatchback-sports.glb",
-"length": 4,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "taxi",
-"file": "asset-src/kenney/car/Models/GLB format/taxi.glb",
-"length": 4.4,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "van",
-"file": "asset-src/kenney/car/Models/GLB format/van.glb",
-"length": 5,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "truck",
-"file": "asset-src/kenney/car/Models/GLB format/truck.glb",
-"length": 7,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
-"crease": 30
-},
-{
-"key": "delivery",
-"file": "asset-src/kenney/car/Models/GLB format/delivery.glb",
-"length": 6,
-"lods": {
-"hi": 1800,
-"lo": 400
-},
-"rotate": [
-0,
--90,
-0
-],
-"stretch": [
-1,
-0.74,
-0.72
-],
 "crease": 30
 },
 {
@@ -204,11 +231,10 @@
 "file": "asset-src/sketchfab/bus_town/model.glb",
 "length": 10.5,
 "lods": {
-"hi": 4500,
-"lo": 3200
+"lo": 4200
 },
-"error": 0.2,
-"crease": 30
+"crease": 34,
+"error": 0.12
 },
 {
 "key": "mosque_lalbagh",

@@ -13,7 +13,7 @@ import { HUMP_HALF, crossGreen, humpHeight, mainSignal, type SideStreet } from "
  * slot 3 is the kerb lane. Bangladesh drives on the left: direction +1 runs with the train on the
  * near side (z > 0), direction -1 against it on the far side.
  */
-export type Kind = "sedan" | "suv" | "hatch" | "taxi" | "van" | "truck" | "delivery" | "cng" | "rickshaw_fan" | "rickshaw_cycle" | "bus_town" | "bike";
+export type Kind = "sedan" | "wagon" | "e180" | "suv" | "taxi" | "van" | "cng" | "rickshaw_fan" | "rickshaw_cycle" | "bus_town" | "bike" | "bicycle" | "pedal_goods" | "pedal_people";
 
 interface Spec {
   length: number;
@@ -38,17 +38,21 @@ interface Spec {
 
 const CAR: Omit<Spec, "length"> = { speed: [8.5, 12.5], accel: 1.6, brake: 2.8, headway: 1.0, standstill: 1.6, slots: [0, 1, 2], weave: 0.06, eagerness: 0.45, halts: 0, creep: 0.3, hump: 2.4 };
 
+const PEDAL_VAN: Omit<Spec, "length"> = { speed: [2.2, 3.4], accel: 0.35, brake: 1.6, headway: 0.9, standstill: 0.9, slots: [3], weave: 0.12, eagerness: 0.1, halts: 0.03, creep: 0.8, hump: 1.2 };
+
 export const SPECS: Record<Kind, Spec> = {
-  sedan: { ...CAR, length: 4.4 },
-  suv: { ...CAR, length: 4.7 },
-  hatch: { ...CAR, length: 4 },
+  sedan: { ...CAR, length: 4.35 },
+  wagon: { ...CAR, length: 4.3 },
+  e180: { ...CAR, length: 4.55 },
+  suv: { ...CAR, length: 4.3 },
   taxi: { ...CAR, length: 4.4, slots: [0, 1, 2, 3], halts: 0.02 },
-  van: { ...CAR, length: 5, speed: [8, 11], slots: [0, 1, 2, 3] },
-  truck: { ...CAR, length: 7, speed: [6.5, 9], accel: 0.9, brake: 2.2, headway: 1.4, standstill: 2, eagerness: 0.9, hump: 1.7 },
-  delivery: { ...CAR, length: 6, speed: [7.5, 10], accel: 1.1, slots: [1, 2, 3], eagerness: 0.8 },
+  van: { ...CAR, length: 4.9, speed: [8, 11], slots: [0, 1, 2, 3] },
   bus_town: { ...CAR, length: 10.5, speed: [7.5, 10.5], accel: 1.0, brake: 2.5, headway: 1.2, standstill: 2, slots: [1, 2, 3], eagerness: 0.7, halts: 0.07, hump: 1.6 },
   cng: { length: 2.9, speed: [7, 10], accel: 1.4, brake: 3, headway: 0.7, standstill: 1.0, slots: [0, 1, 2, 3], weave: 0.22, eagerness: 0.12, halts: 0.03, creep: 1.6, hump: 2.6 },
-  bike: { length: 1.9, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4, hump: 3.2 },
+  bicycle: { length: 1.75, speed: [3.2, 4.8], accel: 0.6, brake: 2.2, headway: 0.7, standstill: 0.7, slots: [2, 3], weave: 0.2, eagerness: 0.15, halts: 0.01, creep: 1.6, hump: 2.2 },
+  pedal_goods: { ...PEDAL_VAN, length: 2.75 },
+  pedal_people: { ...PEDAL_VAN, length: 2.75 },
+  bike: { length: 2, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4, hump: 3.2 },
   rickshaw_fan: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
   rickshaw_cycle: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
 };
@@ -56,6 +60,8 @@ export const SPECS: Record<Kind, Spec> = {
 export const LANE_Z = [3.4, 6.4, 9.4, 12.1] as const;
 /** Where a stopped front bumper rests, back from the junction's edge, before any creeping. */
 const STOP_BACK = 1.4;
+/** How far behind the window traffic running with it may be before it is sent round again. */
+const BEHIND_ROOM = 60;
 /** How hard a driver brakes for a speed breaker they have seen coming, metres a second squared. */
 const HUMP_BRAKE = 1.3;
 /** Distance between axles as a share of a vehicle's length. */
@@ -153,12 +159,12 @@ export interface FlowOptions {
 }
 
 const DEFAULT_MIX: readonly (readonly Kind[])[] = [
-  ["sedan", "sedan", "suv", "bike", "cng", "hatch", "taxi", "sedan", "bus_town", "bike", "suv"],
-  ["sedan", "cng", "cng", "bike", "suv", "cng", "bus_town", "van", "cng", "truck", "delivery", "hatch"],
-  ["cng", "cng", "bus_town", "hatch", "cng", "bike", "van", "rickshaw_cycle", "taxi", "delivery"],
-  ["rickshaw_fan", "rickshaw_cycle", "rickshaw_fan", "cng", "rickshaw_cycle", "cng", "bus_town", "rickshaw_fan"],
+  ["sedan", "e180", "suv", "bike", "cng", "wagon", "taxi", "sedan", "bus_town", "bike", "suv", "van", "e180"],
+  ["sedan", "cng", "cng", "bike", "suv", "cng", "bus_town", "van", "cng", "wagon", "taxi", "van"],
+  ["cng", "cng", "bus_town", "wagon", "cng", "bike", "van", "rickshaw_cycle", "taxi", "bicycle", "sedan"],
+  ["rickshaw_fan", "rickshaw_cycle", "rickshaw_fan", "cng", "rickshaw_cycle", "pedal_goods", "bus_town", "rickshaw_fan", "bicycle", "pedal_people", "cng", "bicycle"],
 ];
-export const CROSS_MIX: readonly Kind[] = ["rickshaw_fan", "cng", "rickshaw_cycle", "bike", "cng", "sedan", "rickshaw_fan", "hatch", "cng", "bike"];
+export const CROSS_MIX: readonly Kind[] = ["rickshaw_fan", "cng", "rickshaw_cycle", "bike", "cng", "sedan", "rickshaw_fan", "wagon", "cng", "bike", "bicycle"];
 /** How many crossers one junction keeps at most: a side street's worth each way. */
 export const CROSSERS_PER_JUNCTION = 10;
 const CROSS_REACH = 72;
@@ -335,14 +341,15 @@ export function createFlow(options: FlowOptions): Flow {
   /** Brings back a vehicle that has left the window at the far end, behind whatever is already there. */
   const recycle = (vehicle: Vehicle, from: number, to: number): void => {
     const spec = SPECS[vehicle.kind];
-    const outFront = vehicle.s > to;
+    // Only traffic running with the window can leave it ahead; everything else comes in from ahead.
+    const outFront = vehicle.direction > 0 && vehicle.s > to;
     const slot = rng.pick(spec.slots);
     const lane = lanes[laneOf(vehicle.direction, slot)]!;
+    let low = from - rng.range(0, 8);
+    if (outFront) for (const other of lane) if (other !== vehicle) low = Math.min(low, other.s - (other.length + vehicle.length) / 2 - spec.standstill - rng.range(2, 14));
     let s: number;
-    if (outFront) {
+    if (outFront && low > from - BEHIND_ROOM + 10) {
       // Gone ahead of the window: bring it back in from behind.
-      let low = from - rng.range(0, 8);
-      for (const other of lane) if (other !== vehicle) low = Math.min(low, other.s - (other.length + vehicle.length) / 2 - spec.standstill - rng.range(2, 14));
       s = low;
     } else {
       let high = to + rng.range(0, 8);
@@ -520,7 +527,9 @@ export function createFlow(options: FlowOptions): Flow {
         crestsHere.length = 0;
         for (const j of junctions) crestsHere.push(crestOn(j, vehicle.direction));
         ride(vehicle, vehicle.s, vehicle.direction, vehicle.length, crestsHere, dt);
-        if (vehicle.s < from - 6 || vehicle.s > to + 40) {
+        // Traffic with the window gets some room behind it, or a queue coming in from there would count as gone.
+        const gone = vehicle.direction > 0 ? vehicle.s < from - BEHIND_ROOM || vehicle.s > to + 40 : vehicle.s < from - 6;
+        if (gone) {
           recycle(vehicle, from, to);
           vehicle.yaw = 0;
         }

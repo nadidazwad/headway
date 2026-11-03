@@ -145,10 +145,10 @@ float tinSurface(vec2 uv, float px) {
 float foliageSurface(vec3 p, float px) {
   vec2 a = p.xy + p.z * 0.37;
   vec2 b = p.zy - p.x * 0.29;
-  float leaves = 0.5 * (wnoise(a, 2.6) + wnoise(b + 13.0, 2.6));
-  float v = 1.0 + (leaves - 0.5) * 0.24;
-  float gaps = 0.5 * (wnoise(a, 7.0) + wnoise(b, 7.0));
-  v -= smoothstep(0.6, 0.8, gaps) * 0.22 * detail(0.1, px);
+  float leaves = 0.5 * (wnoise(a, 3.5) + wnoise(b + 13.0, 3.5));
+  float v = 1.0 + (leaves - 0.5) * 0.3 * detail(0.28, px);
+  float fine = 0.5 * (wnoise(a, 13.0) + wnoise(b, 13.0));
+  v += (fine - 0.5) * 0.5 * detail(0.09, px);
   return v;
 }
 
@@ -310,7 +310,9 @@ void main() {
     // Print keeps its blacks, so a sign still reads; everything else is lifted towards the paper.
     bool printed = vUv.x > 0.0 || vUv.y > 0.0;
     value = printed ? 0.2 + 0.8 * value : 0.42 + 0.58 * pow(value, 0.7);
+    #ifndef NO_WEATHER
     value *= weathering(vSurface, vLine, n);
+    #endif
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
     float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.12 : 0.36;
     lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.84, 1.0, shade);
@@ -451,6 +453,8 @@ void main() {
   float normalLine = smoothstep(0.42, 1.05, length(l.xy - r.xy) + length(d.xy - u.xy));
   float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * uFineInk;
   float line = max(depthLine * 0.9, max(normalLine * 0.75, partLine));
+  // Inside a crown of leaves the ink all but disappears; it keeps its full weight round the outside.
+  if (min(c.w, min(l.w, min(r.w, min(d.w, u.w)))) > 0.995) line *= 0.22;
 
   float coverage = color.a;
   vec3 solid = coverage > 0.001 ? color.rgb / coverage : vec3(0.0);

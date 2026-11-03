@@ -131,6 +131,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     glslVersion: GLSL3,
     vertexShader: solidVertex,
     fragmentShader: solidFragment,
+    defines: import.meta.env.DEV && new URLSearchParams(location.search).has("noweather") ? { NO_WEATHER: 1 } : {},
     uniforms: {
       ...shared,
       uCutPlane: { value: new Vector4() },

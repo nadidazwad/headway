@@ -1,3 +1,5 @@
+import type { Batch } from "../geometry";
+
 /** Fixed measurements of the cross-section. Track runs along X; +Z is towards the viewer. */
 export const CHUNK_LENGTH = 60;
 export const SPAN = 20;
@@ -14,6 +16,11 @@ export const FRONT_ROW = 25;
 export const FAR_BACK = -175;
 export const FAR_FRONT = 130;
 export const WORLD_TOP = 130;
+
+/** Hands out a separate mesh for each small patch of a chunk, so what is off screen costs nothing. */
+export interface Cells {
+  at(x: number, z: number): Batch;
+}
 
 export interface Context {
   seed: number;
