@@ -21,7 +21,7 @@ console.error = quiet;
 
 const [source, output, ...only] = process.argv.slice(2);
 const HI_TRIANGLES = 3400;
-const LO_TRIANGLES = 700;
+const LO_TRIANGLES = 860;
 const FAR_TRIANGLES = 260;
 const WALK_FRAMES = 8;
 /** Quantisation of positions: 1 unit is 1/4096 of a metre. */
@@ -343,12 +343,15 @@ async function bakeAvatar(member) {
     const z = restPositions[id * 3 + 2];
     return y < brow && y > chin && z > faceFront && Math.abs(x) < faceSide;
   };
-  const keptBy = (keepsFace) => {
+  const HANDS = /hand|finger|thumb/;
+  const keptBy = (keepsFace, keepsHands) => {
     const kept = [];
     for (let i = 0; i < indices.length; i += 3) {
       const corners = [indices[i], indices[i + 1], indices[i + 2]];
       const vs = corners.map((id) => vertices[id]);
       if (member.piece && !corners.every(showsThrough)) continue;
+      // Below full detail the clothes draw simple hands instead: see `mittens`.
+      if (!keepsHands && vs.some((v) => HANDS.test(v.bone))) continue;
       if (member.hijab) {
         if (vs.some((v) => v.part === 2)) continue;
         if (vs.some((v) => SKIN_BONES.test(v.bone) && !/hand|finger|thumb/.test(v.bone))) {
@@ -388,7 +391,7 @@ async function bakeAvatar(member) {
     const clothTriangles = outfit.cloth.indices.length / 3;
     // A re-dressed body is islands (head, hands, feet) whose open edges must stay where the clothes meet them.
     const flags = member.piece && lod !== "far" ? ["LockBorder"] : [];
-    const body = compact(simplified(keptBy(outfit.keepsFace), Math.max(50, BUDGET[lod] - clothTriangles), flags));
+    const body = compact(simplified(keptBy(outfit.keepsFace, lod === "hi"), Math.max(50, BUDGET[lod] - clothTriangles), flags));
     const offset = body.used.length;
     lods[lod] = {
       outfit,

@@ -14,9 +14,9 @@ const smooth = (a, b, x) => {
 
 /** How much cloth each level of detail can afford. */
 const DETAIL = {
-  hi: { seg: 14, arm: 8, leg: 9, rows: 1, ribbon: 3, face: true, fold: true },
-  lo: { seg: 8, arm: 5, leg: 6, rows: 0.5, ribbon: 1, face: true, fold: false },
-  far: { seg: 5, arm: 3, leg: 4, rows: 0.25, ribbon: 0, face: false, fold: false },
+  hi: { seg: 14, arm: 8, leg: 9, rows: 1, ribbon: 3, face: true, fold: true, mitten: 0 },
+  lo: { seg: 8, arm: 5, leg: 6, rows: 0.5, ribbon: 1, face: true, fold: false, mitten: 5 },
+  far: { seg: 5, arm: 3, leg: 4, rows: 0.25, ribbon: 0, face: false, fold: false, mitten: 4 },
 };
 
 /** Everything a garment needs to know about the current pose, in the avatar's raw units. */
@@ -259,6 +259,11 @@ function torsoRings(s, seg, to, _female, detail) {
   named("chest");
   if (detail >= 1) named("ribs");
   named("waist");
+  if (to === "open") {
+    // Nothing closes underneath: whatever comes next carries on from this ring.
+    if (detail >= 1) named("belly");
+    return levels.map(({ c, a, b }) => ringAt(c, side, fwd, a, b, seg));
+  }
   if (to !== "waist") {
     if (detail >= 1) named("belly");
     named("hip");
@@ -268,6 +273,39 @@ function torsoRings(s, seg, to, _female, detail) {
     add(s.pelvis.clone().addScaledVector(up, -0.12 * metre), a * 0.42, b * 0.5);
   }
   return levels.map(({ c, a, b }) => ringAt(c, side, fwd, a, b, seg));
+}
+
+/**
+ * A garment cut in one piece from the shoulders down. Body and skirt are one surface: built apart
+ * they cross at the hip, and two faceted surfaces crossing leave a jagged line wherever they do.
+ */
+function oneCloth(s, d, skirt, cloth, grey, above = null) {
+  const body = torsoRings(s, d.seg, "open", false, d.rows);
+  const below = skirtRings(s, { ...skirt, seg: d.seg });
+  if (above !== null) {
+    // Two cloths that meet: they share a ring, so the join is a clean hem and still nothing crosses.
+    cloth.loft(body, { grey: above });
+    cloth.loft([body[body.length - 1], ...below], { grey });
+    return;
+  }
+  cloth.loft([...body, ...below], { grey: typeof grey === "function" ? (i, j) => grey(i - body.length, j) : grey });
+}
+
+/**
+ * Hands for when real ones cannot be afforded. A simplifier left a few triangles for all those
+ * fingers collapses them into spikes; a small rounded mitten off the wrist has nothing to collapse.
+ */
+function mittens(cloth, s, sides, skin) {
+  const m = s.metre;
+  for (const side of [1, -1]) {
+    const [, fore, hand] = armPath(s, side);
+    const reach = sub(hand, fore).normalize();
+    const start = hand.clone().addScaledVector(reach, -0.01 * m);
+    const palm = hand.clone().addScaledVector(reach, 0.05 * m);
+    const tip = hand.clone().addScaledVector(reach, 0.11 * m);
+    const width = [0.024, 0.036, 0.04, 0.03, 0.008];
+    cloth.loft(tubeRings([start, palm, tip], 0, 1, width.length - 1, sides, (t) => width[Math.round(t * (width.length - 1))] * m, s.fwd), { grey: skin });
+  }
 }
 
 /** A strip of cloth laid over the body along `path`, curved between its points and never twisting. */
@@ -335,10 +373,11 @@ function hijab(cloth, s, { seg, rows: rowScale, face }, grey, skin, female, drap
   rings.push(ringAt(chin, S, F, 0.078 * m, 0.082 * m, seg, phase));
   const collar = lerp(s.claL, s.claR, 0.5).lerp(s.neck, 0.45);
   rings.push(ringAt(collar, s.side, s.fwd, 0.72 * s.sw, 0.62 * s.sw, seg, phase));
-  const shoulder = lerp(s.upL, s.upR, 0.5).addScaledVector(s.up, -0.01 * m).addScaledVector(s.fwd, 0.1 * s.sw);
-  rings.push(ringAt(shoulder, s.side, s.fwd, 1.18 * s.sw, 0.84 * s.sw, seg, phase));
-  const chest = shoulder.clone().addScaledVector(s.up, -drape * m).addScaledVector(s.fwd, 0.05 * s.sw);
-  const hem = ringAt(chest, s.side, s.fwd, 1.2 * s.sw, 0.96 * s.sw, seg, phase);
+  // Standing well off the front: the bust must never come through the cape.
+  const shoulder = lerp(s.upL, s.upR, 0.5).addScaledVector(s.up, -0.01 * m).addScaledVector(s.fwd, 0.16 * s.sw);
+  rings.push(ringAt(shoulder, s.side, s.fwd, 1.18 * s.sw, 0.98 * s.sw, seg, phase));
+  const chest = shoulder.clone().addScaledVector(s.up, -drape * m).addScaledVector(s.fwd, 0.1 * s.sw);
+  const hem = ringAt(chest, s.side, s.fwd, 1.2 * s.sw, 1.16 * s.sw, seg, phase);
   // Longer at the front and back than over the arms.
   hem.forEach((q, j) => {
     const th = phase + (j / seg) * Math.PI * 2;
@@ -421,23 +460,23 @@ const PIECES = {
   shalwar(cloth, s, d, o) {
     const m = s.metre;
     trouserLegs(cloth, s, d, 0.3, (t) => (t < 0.62 ? 0.088 : 0.088 - (t - 0.62) * 0.11) * m, o.lower, Math.max(10, o.lower - 26));
-    const tunic = cloth.nextPart;
-    cloth.loft(torsoRings(s, d.seg, "hip", s.female, d.rows), { grey: o.upper });
     sleeves(cloth, s, d, 0.84, o.upper);
     bareArms(cloth, s, d, 0.84, o.skin);
     const rows = d.rows >= 1 ? 6 : d.rows >= 0.5 ? 3 : 2;
-    cloth.loft(
-      skirtRings(s, {
+    oneCloth(
+      s,
+      d,
+      {
         t0: -0.05,
         t1: 0.56,
         rows,
-        seg: d.seg,
         radius: (t) => (0.118 + 0.05 * Math.max(t, 0)) * m,
         swing: 1,
         fold: d.fold ? folds(0.09, 5, 1.2) : null,
         liftHem: (th) => 0.11 * m * Math.abs(Math.cos(th)) ** 6,
-      }),
-      { part: tunic, grey: (i) => (i === rows ? Math.max(10, o.upper - 34) : o.upper) },
+      },
+      cloth,
+      (i) => (i === rows ? Math.max(10, o.upper - 34) : o.upper),
     );
   },
   /** A shari: a blouse, a pleated skirt to the ankle, and the pallu across the chest and over the left shoulder. */
@@ -490,65 +529,62 @@ const PIECES = {
   kurta(cloth, s, d, o) {
     const m = s.metre;
     trouserLegs(cloth, s, d, 0.2, (t) => (0.08 - 0.03 * t) * m, o.lower);
-    const tunic = cloth.nextPart;
-    cloth.loft(torsoRings(s, d.seg, "hip", true, d.rows), { grey: o.upper });
     sleeves(cloth, s, d, 0.72, o.upper);
     bareArms(cloth, s, d, 0.72, o.skin);
-    const rows = d.rows >= 1 ? 4 : 2;
-    cloth.loft(
-      skirtRings(s, {
+    oneCloth(
+      s,
+      d,
+      {
         t0: -0.05,
         t1: 0.36,
-        rows,
-        seg: d.seg,
+        rows: d.rows >= 1 ? 4 : 2,
         radius: (t) => (0.118 + 0.03 * Math.max(t, 0)) * m,
         swing: 1,
         fold: d.fold ? folds(0.05, 4, 2) : null,
         liftHem: (th) => 0.08 * m * Math.abs(Math.cos(th)) ** 6,
-      }),
-      { part: tunic, grey: o.upper },
+      },
+      cloth,
+      o.upper,
     );
   },
   /** A burka: one long robe from the shoulders to the ankle, sleeves to the wrist, a scarf over it. */
   burka(cloth, s, d, o) {
     const m = s.metre;
-    const robe = cloth.nextPart;
-    cloth.loft(torsoRings(s, d.seg, "hip", true, d.rows), { grey: o.upper });
     sleeves(cloth, s, d, 1, o.upper);
-    const rows = d.rows >= 1 ? 7 : d.rows >= 0.5 ? 4 : 2;
-    cloth.loft(
-      skirtRings(s, {
+    oneCloth(
+      s,
+      d,
+      {
         t0: -0.05,
         t1: 0.98,
-        rows,
-        seg: d.seg,
+        rows: d.rows >= 1 ? 7 : d.rows >= 0.5 ? 4 : 2,
         radius: (t) => (0.122 + 0.07 * Math.max(t, 0)) * m,
         swing: 0.66,
         fold: d.fold ? folds(0.06, 5, 0.8) : null,
-      }),
-      { part: robe, grey: o.upper },
+      },
+      cloth,
+      o.upper,
     );
   },
   /** A panjabi: a long collared tunic to the knee, over pale trousers. */
   panjabi(cloth, s, d, o) {
     const m = s.metre;
     trouserLegs(cloth, s, d, 0.3, (t) => (0.088 - 0.028 * t) * m, o.lower);
-    const tunic = cloth.nextPart;
-    cloth.loft(torsoRings(s, d.seg, "hip", false, d.rows), { grey: o.upper });
     sleeves(cloth, s, d, 1, o.upper);
-    const rows = d.rows >= 1 ? 5 : d.rows >= 0.5 ? 3 : 2;
-    cloth.loft(
-      skirtRings(s, {
+    oneCloth(
+      s,
+      d,
+      {
         t0: -0.05,
         t1: 0.58,
-        rows,
-        seg: d.seg,
+        rows: d.rows >= 1 ? 5 : d.rows >= 0.5 ? 3 : 2,
         radius: (t) => (0.118 + 0.032 * Math.max(t, 0)) * m,
         swing: 1,
         fold: d.fold ? folds(0.05, 4, 1.8) : null,
         liftHem: (th) => 0.12 * m * Math.abs(Math.cos(th)) ** 6,
-      }),
-      { part: tunic, grey: o.upper },
+      },
+      cloth,
+      o.upper,
     );
     if (d.ribbon) {
       // The collar band and the buttoned opening down the chest.
@@ -557,33 +593,36 @@ const PIECES = {
       ribbon(cloth, s, [near(s, collar, 0, 0.36, -0.005), onBodice(s, "chest", 0, false, 0.02).addScaledVector(s.up, 0.09 * m), onBodice(s, "chest", 0, false, 0.02), onBodice(s, "ribs", 0, false, 0.02)], () => 0.016, { grey: Math.max(10, o.upper - 46), steps: 1 });
     }
   },
-  /** A lungi, knotted at the waist and worn to the shin, under a thin T-shirt. */
+  /** A lungi, knotted at the waist and worn nearly to the ankle, under a thin T-shirt. */
   lungi(cloth, s, d, o) {
     const m = s.metre;
-    cloth.loft(torsoRings(s, d.seg, "hip", false, d.rows), { grey: o.upper });
+    // The bare ankles it leaves showing, and more of them when it swings with a stride.
+    trouserLegs(cloth, s, d, 0.74, () => 0.04 * m, o.skin);
     sleeves(cloth, s, d, 0.2, o.upper);
     bareArms(cloth, s, d, 0.2, o.skin);
     const rows = d.rows >= 1 ? 7 : d.rows >= 0.5 ? 4 : 2;
-    cloth.loft(
-      skirtRings(s, {
+    // The shirt is worn untucked, its hem where the lungi is knotted.
+    oneCloth(
+      s,
+      d,
+      {
         t0: -0.06,
-        t1: 0.84,
+        t1: 0.92,
         rows,
-        seg: d.seg,
         radius: (t) => (0.118 + 0.02 * Math.max(t, 0)) * m,
         swing: 0.66,
-      }),
-      { grey: (i, j) => (d.rows >= 1 && (i + j) % 4 < 2 ? o.lower : Math.min(255, o.lower + 34)) },
+      },
+      cloth,
+      (i, j) => (d.rows >= 1 && (i + j) % 4 < 2 ? o.lower : Math.min(255, o.lower + 34)),
+      o.upper,
     );
   },
   /** A suit: a dark jacket to the hip, a white shirt and tie in its V. */
   suit(cloth, s, d, o) {
     const m = s.metre;
     trouserLegs(cloth, s, d, 0.02, (t) => (0.082 - 0.024 * t) * m, o.lower);
-    cloth.loft(torsoRings(s, d.seg, "hip", false, d.rows), { grey: o.upper });
     sleeves(cloth, s, d, 1, o.upper);
-    const rows = d.rows >= 1 ? 3 : 1;
-    cloth.loft(skirtRings(s, { t0: -0.05, t1: 0.16, rows, seg: d.seg, radius: (t) => (0.118 + 0.02 * Math.max(t, 0)) * m, swing: 1 }), { grey: o.upper });
+    oneCloth(s, d, { t0: -0.05, t1: 0.16, rows: d.rows >= 1 ? 3 : 1, radius: (t) => (0.118 + 0.02 * Math.max(t, 0)) * m, swing: 1 }, cloth, o.upper);
     if (d.ribbon) {
       const collar = lerp(s.claL, s.claR, 0.5).lerp(s.neck, 0.75);
       const shirt = [near(s, collar, 0, 0.36, -0.005), onBodice(s, "chest", 0, false, 0.02).addScaledVector(s.up, 0.1 * m), onBodice(s, "chest", 0, false, 0.02), onBodice(s, "ribs", 0, false, 0.02)];
@@ -606,6 +645,7 @@ export function tailor(outfit, lod, skinGrey, female) {
       const s = Object.assign(Object.create(skeleton), { female });
       cloth.start();
       if (outfit.piece) PIECES[outfit.piece](cloth, s, detail, options);
+      if (detail.mitten) mittens(cloth, s, detail.mitten, skinGrey);
       if (outfit.hijab) hijab(cloth, s, detail, outfit.scarf, skinGrey, female, outfit.drape ?? 0.09);
       if (outfit.cap) tupi(cloth, s, detail.seg, outfit.cap);
       if (outfit.orna && detail.ribbon) {
