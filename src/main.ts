@@ -196,11 +196,23 @@ let openBubbleId: string | null = null;
 let bubbleTimer = 0;
 let lastInput = performance.now();
 
-const overlay = createOverlay(document.querySelector<HTMLElement>("#overlay")!, (id) => {
-  lastInput = performance.now();
-  bubbleTimer = 0;
-  showThought(id);
-});
+/** How long each thought stays up before the next person's, and how soon one comes after the mouse leaves. */
+const THOUGHT_SECONDS = 5.6;
+const AFTER_LEAVING = 1.4;
+
+const overlay = createOverlay(
+  document.querySelector<HTMLElement>("#overlay")!,
+  (id) => {
+    lastInput = performance.now();
+    bubbleTimer = 0;
+    showThought(id);
+  },
+  () => {
+    // Folded away at once, so any face it was lying over can be reached; the round picks up shortly after.
+    overlay.openBubble(null);
+    bubbleTimer = THOUGHT_SECONDS - AFTER_LEAVING;
+  },
+);
 
 function showThought(id: string | null): void {
   openBubbleId = id;
@@ -549,8 +561,8 @@ function updateTags(dt: number): void {
     overlay.placeBubble(person.id, screen.x, screen.y);
   }
   overlay.flushBubbles();
-  bubbleTimer += dt;
-  if (bubbleTimer > 5.6 && list.length > 0) {
+  if (!overlay.holding) bubbleTimer += dt;
+  if (bubbleTimer > THOUGHT_SECONDS && list.length > 0) {
     bubbleTimer = 0;
     const index = list.findIndex((p) => p.id === openBubbleId);
     // The one who has just finished moves on to their next thought, for when we come back round.

@@ -1,5 +1,6 @@
 import { THEME_TITLES, type Passenger, type Theme } from "../thoughts";
 import { faceSvg } from "./faces";
+import { spreadFaces, type Box } from "./spread";
 
 export interface Point {
   x: number;
@@ -31,10 +32,12 @@ export interface Overlay {
   /** Rewrites one bubble's words, for when a passenger's thought moves on. */
   updateBubble(passenger: Passenger): void;
   placeBubble(id: string, x: number, y: number): void;
-  /** Writes this frame's bubble positions, lifting any that would overlap another. */
+  /** Writes this frame's bubble positions, lifting any whose face would overlap another's. */
   flushBubbles(): void;
   /** Expands one bubble's words and collapses the others. */
   openBubble(id: string | null): void;
+  /** Whether the mouse is resting on a bubble, so what it is reading should not be taken away. */
+  readonly holding: boolean;
 }
 
 const bubbleBody = (passenger: Passenger): string => `
@@ -66,7 +69,7 @@ function makeCard(className: string): Card {
 }
 
 /** Words over the world, on cards laid in the coach's plane. Only the bubbles take the pointer. */
-export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => void): Overlay {
+export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => void, onBubbleLeave: () => void): Overlay {
   root.innerHTML = `<svg class="wire" data-wire aria-hidden="true"></svg><div data-tags></div><a class="credits" href="${import.meta.env.BASE_URL}credits.txt" target="_blank" rel="noopener">credits</a>`;
   const wire = root.querySelector<SVGSVGElement>("[data-wire]")!;
   const tags = root.querySelector<HTMLElement>("[data-tags]")!;
@@ -81,11 +84,18 @@ export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => 
   const anchors = new Map<string, { x: number; y: number }>();
   let openId: string | null = null;
   let currentCallout = "";
+  /** A bubble's size with its words folded away. */
+  const face = { width: 0, height: 0 };
+  let heldBy: string | null = null;
+  /** Where the mouse last truly was. A bubble can slide under a still mouse and fire an enter: that is not the hand reaching for it. */
+  const hand = { x: -1, y: -1 };
+  window.addEventListener("pointermove", (event) => {
+    hand.x = event.clientX;
+    hand.y = event.clientY;
+  });
 
   /** Where the tail sits along a card's bottom edge so the card stays on screen, and the card's box. */
-  const fit = (card: HTMLElement, x: number, y: number, below: boolean): { tail: number; box: { left: number; right: number; top: number; bottom: number } } => {
-    const width = card.offsetWidth;
-    const height = card.offsetHeight;
+  const fitSize = (width: number, height: number, x: number, y: number, below: boolean): { tail: number; box: Box } => {
     const k = plane.slope;
     let tail = width / 2;
     tail = Math.min(tail, x - MARGIN);
@@ -97,19 +107,18 @@ export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => 
     const bottom = below ? y + TAIL + height + high : y - TAIL + high;
     return { tail, box: { left: x - tail, right: x + width - tail, top, bottom } };
   };
+  const fit = (card: HTMLElement, x: number, y: number, below: boolean): { tail: number; box: Box } => fitSize(card.offsetWidth, card.offsetHeight, x, y, below);
 
   /**
    * Places a card with its tail's tip at (x, y): above the point, or under it pointing up.
-   * Returns the card's screen box, for keeping cards apart.
    */
-  const place = ({ root: element, card }: Card, x: number, y: number, below = false): { left: number; right: number; top: number; bottom: number } => {
-    const { tail, box } = fit(card, x, y, below);
+  const place = ({ root: element, card }: Card, x: number, y: number, below = false): void => {
+    const { tail } = fit(card, x, y, below);
     const k = plane.slope;
     const shift = below ? TAIL : -(card.offsetHeight + TAIL);
     element.classList.toggle("below", below);
     element.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) matrix(1, ${k.toFixed(4)}, 0, 1, 0, 0) translate(${(-tail).toFixed(1)}px, ${shift}px)`;
     card.style.setProperty("--tail", `${tail.toFixed(1)}px`);
-    return box;
   };
 
   /** The first point along a segment, from its middle outwards, where a card fits on screen. */
@@ -167,13 +176,34 @@ export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => 
       for (const { root: element } of bubbles.values()) element.remove();
       bubbles.clear();
       anchors.clear();
+      heldBy = null;
       for (const passenger of passengers) {
         if (!passenger.thought) continue;
         const bubble = makeCard("bubble");
         bubble.card.innerHTML = bubbleBody(passenger);
-        bubble.root.addEventListener("pointerenter", () => onBubbleHover(passenger.id));
+        const { id } = passenger;
+        // Opens to a hand that moved here. Checked on moving too, for a bubble that slid under the mouse before it stirred.
+        const reach = (event: PointerEvent): void => {
+          if (event.pointerType === "mouse") heldBy = id;
+          if (event.clientX !== hand.x || event.clientY !== hand.y) {
+            if (id !== openId) onBubbleHover(id);
+          }
+        };
+        bubble.root.addEventListener("pointerenter", reach);
+        bubble.root.addEventListener("pointermove", reach);
+        bubble.root.addEventListener("pointerleave", (event) => {
+          // A finger always leaves as soon as it lifts: on a phone the card stays for reading.
+          if (event.pointerType !== "mouse") return;
+          heldBy = null;
+          onBubbleLeave();
+        });
         tags.append(bubble.root);
-        bubbles.set(passenger.id, bubble);
+        bubbles.set(id, bubble);
+      }
+      const first = bubbles.values().next().value;
+      if (first) {
+        face.width = first.card.offsetWidth;
+        face.height = first.card.offsetHeight;
       }
     },
     updateBubble(passenger) {
@@ -184,26 +214,17 @@ export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => 
       anchors.set(id, { x, y });
     },
     flushBubbles() {
-      const placed: Array<{ left: number; right: number; top: number; bottom: number }> = [];
-      const order = [...bubbles.keys()].sort((a, b) => (a === openId ? -1 : b === openId ? 1 : 0));
-      for (const id of order) {
-        const anchor = anchors.get(id);
-        const bubble = bubbles.get(id);
-        if (!anchor || !bubble) continue;
-        let y = anchor.y;
-        let box = place(bubble, anchor.x, y);
-        for (let guard = 0; guard < 6; guard++) {
-          const clash = placed.find((other) => box.left < other.right + 4 && box.right > other.left - 4 && box.top < other.bottom + 4 && box.bottom > other.top - 4);
-          if (!clash) break;
-          y -= box.bottom - clash.top + 6;
-          box = place(bubble, anchor.x, y);
-        }
-        placed.push(box);
-      }
+      const present = [...bubbles.keys()].filter((id) => anchors.has(id));
+      const spots = present.map((id) => anchors.get(id)!);
+      const lifted = spreadFaces(spots, (x, y) => fitSize(face.width, face.height, x, y, false).box);
+      present.forEach((id, i) => place(bubbles.get(id)!, spots[i]!.x, lifted[i]!));
     },
     openBubble(id) {
       openId = id;
       for (const [key, bubble] of bubbles) bubble.root.classList.toggle("open", key === id);
+    },
+    get holding() {
+      return heldBy !== null;
     },
   };
 }
