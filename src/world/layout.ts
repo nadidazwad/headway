@@ -10,6 +10,8 @@ export const DECK_HALF = 4.7;
 export const TRACK_Z = 1.95;
 export const MEDIAN_HALF = 1.6;
 export const ROAD_HALF = 13.5;
+/** The road-side face of the kerb, and so the limit of the carriageway: nothing on wheels goes past it. */
+export const KERB_FACE = ROAD_HALF - 0.14;
 export const SIDEWALK_HALF = 18;
 /** The first row of blocks stands back on the near side, so the street under the line stays open. */
 export const FRONT_ROW = 25;

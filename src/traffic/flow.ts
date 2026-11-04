@@ -1,4 +1,5 @@
 import { Rng, hashSeed } from "../shared/rng";
+import { KERB_FACE, MEDIAN_HALF } from "../world/layout";
 import { HUMP_HALF, crossGreen, humpHeight, mainSignal, type SideStreet } from "../world/plan";
 
 /**
@@ -17,6 +18,8 @@ export type Kind = "sedan" | "wagon" | "e180" | "suv" | "taxi" | "van" | "cng" |
 
 interface Spec {
   length: number;
+  /** Measured off the drawn vehicle with whoever is on it, feet and elbows included. */
+  width: number;
   /** Free speed range, metres a second. */
   speed: readonly [number, number];
   accel: number;
@@ -36,28 +39,30 @@ interface Spec {
   hump: number;
 }
 
-const CAR: Omit<Spec, "length"> = { speed: [8.5, 12.5], accel: 1.6, brake: 2.8, headway: 1.0, standstill: 1.6, slots: [0, 1, 2], weave: 0.06, eagerness: 0.45, halts: 0, creep: 0.3, hump: 2.4 };
+const CAR: Omit<Spec, "length" | "width"> = { speed: [8.5, 12.5], accel: 1.6, brake: 2.8, headway: 1.0, standstill: 1.6, slots: [0, 1, 2], weave: 0.06, eagerness: 0.45, halts: 0, creep: 0.3, hump: 2.4 };
 
-const PEDAL_VAN: Omit<Spec, "length"> = { speed: [2.2, 3.4], accel: 0.35, brake: 1.6, headway: 0.9, standstill: 0.9, slots: [3], weave: 0.12, eagerness: 0.1, halts: 0.03, creep: 0.8, hump: 1.2 };
+const PEDAL_VAN: Omit<Spec, "length" | "width"> = { speed: [2.2, 3.4], accel: 0.35, brake: 1.6, headway: 0.9, standstill: 0.9, slots: [3], weave: 0.12, eagerness: 0.1, halts: 0.03, creep: 0.8, hump: 1.2 };
 
 export const SPECS: Record<Kind, Spec> = {
-  sedan: { ...CAR, length: 4.35 },
-  wagon: { ...CAR, length: 4.3 },
-  e180: { ...CAR, length: 4.55 },
-  suv: { ...CAR, length: 4.3 },
-  taxi: { ...CAR, length: 4.4, slots: [0, 1, 2, 3], halts: 0.02 },
-  van: { ...CAR, length: 4.9, speed: [8, 11], slots: [0, 1, 2, 3] },
-  bus_town: { ...CAR, length: 10.5, speed: [7.5, 10.5], accel: 1.0, brake: 2.5, headway: 1.2, standstill: 2, slots: [1, 2, 3], eagerness: 0.7, halts: 0.07, hump: 1.6 },
-  cng: { length: 2.9, speed: [7, 10], accel: 1.4, brake: 3, headway: 0.7, standstill: 1.0, slots: [0, 1, 2, 3], weave: 0.22, eagerness: 0.12, halts: 0.03, creep: 1.6, hump: 2.6 },
-  bicycle: { length: 1.75, speed: [3.2, 4.8], accel: 0.6, brake: 2.2, headway: 0.7, standstill: 0.7, slots: [2, 3], weave: 0.2, eagerness: 0.15, halts: 0.01, creep: 1.6, hump: 2.2 },
-  pedal_goods: { ...PEDAL_VAN, length: 2.75 },
-  pedal_people: { ...PEDAL_VAN, length: 2.75 },
-  bike: { length: 2, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4, hump: 3.2 },
-  rickshaw_fan: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
-  rickshaw_cycle: { length: 2.7, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
+  sedan: { ...CAR, length: 4.35, width: 2.06 },
+  wagon: { ...CAR, length: 4.3, width: 1.89 },
+  e180: { ...CAR, length: 4.55, width: 2.14 },
+  suv: { ...CAR, length: 4.3, width: 1.87 },
+  taxi: { ...CAR, length: 4.4, width: 1.94, slots: [0, 1, 2, 3], halts: 0.02 },
+  van: { ...CAR, length: 4.9, width: 2.2, speed: [8, 11], slots: [0, 1, 2, 3] },
+  bus_town: { ...CAR, length: 10.5, width: 2.56, speed: [7.5, 10.5], accel: 1.0, brake: 2.5, headway: 1.2, standstill: 2, slots: [1, 2, 3], eagerness: 0.7, halts: 0.07, hump: 1.6 },
+  cng: { length: 2.9, width: 1.48, speed: [7, 10], accel: 1.4, brake: 3, headway: 0.7, standstill: 1.0, slots: [0, 1, 2, 3], weave: 0.22, eagerness: 0.12, halts: 0.03, creep: 1.6, hump: 2.6 },
+  bicycle: { length: 1.75, width: 0.54, speed: [3.2, 4.8], accel: 0.6, brake: 2.2, headway: 0.7, standstill: 0.7, slots: [2, 3], weave: 0.2, eagerness: 0.15, halts: 0.01, creep: 1.6, hump: 2.2 },
+  pedal_goods: { ...PEDAL_VAN, length: 3.1, width: 1.45 },
+  pedal_people: { ...PEDAL_VAN, length: 3.1, width: 2.26 },
+  bike: { length: 2, width: 0.78, speed: [10, 14], accel: 2.5, brake: 4, headway: 0.5, standstill: 0.8, slots: [0, 1, 2, 3], weave: 0.32, eagerness: 0.05, halts: 0, creep: 2.4, hump: 3.2 },
+  rickshaw_fan: { length: 2.7, width: 1.1, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
+  rickshaw_cycle: { length: 2.7, width: 1.4, speed: [2.8, 4.2], accel: 0.5, brake: 2, headway: 0.9, standstill: 0.9, slots: [2, 3], weave: 0.18, eagerness: 0.25, halts: 0.05, creep: 1.2, hump: 1.5 },
 };
 
 export const LANE_Z = [3.4, 6.4, 9.4, 12.1] as const;
+/** The least daylight anything leaves between itself and a kerb. */
+const KERB_CLEARANCE = 0.1;
 /** Where a stopped front bumper rests, back from the junction's edge, before any creeping. */
 const STOP_BACK = 1.4;
 /** How far behind the window traffic running with it may be before it is sent round again. */
@@ -189,13 +194,16 @@ export function createFlow(options: FlowOptions): Flow {
   const vehicles: Vehicle[] = [];
   const crossers: Crosser[] = [];
   const lanes: Vehicle[][] = Array.from({ length: 8 }, () => []);
+  /** Whoever has chosen to move into a lane this step, so two never take the same gap from either side. */
+  const merging: Vehicle[][] = Array.from({ length: 8 }, () => []);
   const laneOf = (direction: number, slot: number): number => (direction > 0 ? 0 : 4) + slot;
-  const zOf = (direction: number, slot: number): number => direction * LANE_Z[slot]!;
+  /** The middle of a lane for this vehicle: a wide one rides a little off the kerb lane's centre. */
+  const zOf = (kind: Kind, direction: number, slot: number): number => direction * Math.min(LANE_Z[slot]!, KERB_FACE - KERB_CLEARANCE - SPECS[kind].width / 2);
 
   const makeVehicle = (kind: Kind, direction: 1 | -1, slot: number, s: number): Vehicle => {
     const spec = SPECS[kind];
     const desired = rng.range(spec.speed[0], spec.speed[1]);
-    const z = zOf(direction, slot) + rng.range(-0.25, 0.25);
+    const z = zOf(kind, direction, slot) + rng.range(-0.25, 0.25);
     return { kind, direction, slot, s, v: desired * rng.range(0.6, 1), z, yaw: 0, length: spec.length, desired, zFrom: z, change: 1, changeTime: 1, wobble: rng.range(0, 100), halt: 0, pull: 0, dawdle: 0, think: rng.range(0, 2), creep: rng.range(0, spec.creep), lift: 0, pitch: 0, pitchRate: 0 };
   };
 
@@ -288,11 +296,11 @@ export function createFlow(options: FlowOptions): Flow {
   const nearJunction = (s: number, margin: number): boolean => junctions.some((j) => Math.abs(s - j.centre) < j.half + margin);
 
   /** Leader and follower a vehicle would have in another lane. */
-  const neighbours = (lane: Vehicle[], vehicle: Vehicle): { leader?: Vehicle; follower?: Vehicle } => {
+  const neighbours = (index: number, vehicle: Vehicle): { leader?: Vehicle; follower?: Vehicle } => {
     let leader: Vehicle | undefined;
     let follower: Vehicle | undefined;
     const mine = vehicle.direction * vehicle.s;
-    for (const other of lane) {
+    for (const other of [...lanes[index]!, ...merging[index]!]) {
       const theirs = vehicle.direction * other.s;
       if (theirs >= mine) {
         if (!leader || theirs < vehicle.direction * leader.s) leader = other;
@@ -313,8 +321,7 @@ export function createFlow(options: FlowOptions): Flow {
     let bestGain = spec.eagerness;
     for (const slot of [vehicle.slot - 1, vehicle.slot + 1]) {
       if (!spec.slots.includes(slot)) continue;
-      const lane = lanes[laneOf(vehicle.direction, slot)]!;
-      const { leader: newLeader, follower } = neighbours(lane, vehicle);
+      const { leader: newLeader, follower } = neighbours(laneOf(vehicle.direction, slot), vehicle);
       if (follower) {
         const gapBehind = vehicle.direction * (vehicle.s - follower.s) - (vehicle.length + follower.length) / 2;
         const followerSpec = SPECS[follower.kind];
@@ -332,6 +339,7 @@ export function createFlow(options: FlowOptions): Flow {
       }
     }
     if (best < 0) return;
+    merging[laneOf(vehicle.direction, best)]!.push(vehicle);
     // zFrom still holds the old lane's centre: the change eases from there to the new one.
     vehicle.slot = best;
     vehicle.change = 0;
@@ -358,9 +366,11 @@ export function createFlow(options: FlowOptions): Flow {
     }
     vehicle.slot = slot;
     vehicle.s = s;
+    // Into the lane straight away, so the next one brought back this step lines up behind it.
+    if (!lane.includes(vehicle)) lane.push(vehicle);
     vehicle.desired = rng.range(spec.speed[0], spec.speed[1]);
     vehicle.v = vehicle.desired * 0.85;
-    vehicle.z = vehicle.zFrom = zOf(vehicle.direction, slot);
+    vehicle.z = vehicle.zFrom = zOf(vehicle.kind, vehicle.direction, slot);
     vehicle.change = 1;
     vehicle.halt = 0;
     vehicle.pull = 0;
@@ -477,6 +487,7 @@ export function createFlow(options: FlowOptions): Flow {
         else crossersAt.set(c.junction, [c]);
       }
       for (const lane of lanes) lane.length = 0;
+      for (const lane of merging) lane.length = 0;
       for (const vehicle of vehicles) lanes[laneOf(vehicle.direction, vehicle.slot)]!.push(vehicle);
       // Front of each lane first, in its own direction of travel.
       for (const lane of lanes) lane.sort((a, c) => c.direction * c.s - a.direction * a.s);
@@ -513,8 +524,10 @@ export function createFlow(options: FlowOptions): Flow {
         const before = vehicle.z;
         // A lane change moves sideways only as the vehicle moves forward: nothing crabs.
         vehicle.change = Math.min(1, vehicle.change + (dt / vehicle.changeTime) * Math.min(1, vehicle.v / 4));
-        const lane = zOf(vehicle.direction, vehicle.slot);
-        vehicle.pull += ((vehicle.halt > 0 ? 0.75 : 0) - vehicle.pull) * Math.min(1, dt * 1.4);
+        const lane = zOf(vehicle.kind, vehicle.direction, vehicle.slot);
+        // Pulling in for a fare goes as far as there is room for this vehicle, and no further.
+        const room = Math.max(0, KERB_FACE - KERB_CLEARANCE - spec.width / 2 - Math.abs(lane));
+        vehicle.pull += ((vehicle.halt > 0 ? Math.min(0.75, room) : 0) - vehicle.pull) * Math.min(1, dt * 1.4);
         const settle = vehicle.zFrom + (lane - vehicle.zFrom) * smoothstep(vehicle.change) + vehicle.direction * vehicle.pull;
         const sway = spec.weave * Math.sin(vehicle.wobble + time * (0.35 + spec.weave)) * Math.min(1, vehicle.v / 3);
         vehicle.z = settle + sway;
@@ -524,6 +537,9 @@ export function createFlow(options: FlowOptions): Flow {
         const limit = MAX_YAW * Math.min(1, 4 / vehicle.length);
         const target = Math.max(-limit, Math.min(limit, Math.atan2(lateral, Math.max(vehicle.v, 2)))) * vehicle.direction;
         vehicle.yaw += (target - vehicle.yaw) * Math.min(1, dt * 5);
+        // Whatever the weave and the nose are doing, every corner stays between the kerbs.
+        const reach = (vehicle.length / 2) * Math.abs(Math.sin(vehicle.yaw)) + (spec.width / 2) * Math.abs(Math.cos(vehicle.yaw));
+        vehicle.z = vehicle.direction * Math.max(MEDIAN_HALF + KERB_CLEARANCE + reach, Math.min(KERB_FACE - KERB_CLEARANCE - reach, vehicle.direction * vehicle.z));
         crestsHere.length = 0;
         for (const j of junctions) crestsHere.push(crestOn(j, vehicle.direction));
         ride(vehicle, vehicle.s, vehicle.direction, vehicle.length, crestsHere, dt);

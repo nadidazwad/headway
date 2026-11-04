@@ -278,7 +278,8 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, o
   }
   const form = FORMS[species];
   const h = height * (species === "mahogany" ? 1.15 : 1);
-  const trunkR = h * form.trunk;
+  // A kerb has no room for a veteran's girth: the walkers' strip starts just behind it.
+  const trunkR = Math.min(h * form.trunk, 0.42);
   const lean = own.range(0, Math.PI * 2);
   const fork: Vec3 = [x + Math.cos(lean) * h * 0.035, h * form.fork, z + Math.sin(lean) * h * 0.035];
   const band = Math.min(1.25, h * form.fork * 0.65);
@@ -287,7 +288,7 @@ export function tree(b: Batch, x: number, z: number, height: number, rng: Rng, o
   b.as(Surface.bark, () => {
     // Whitewashed to the height of a hand, flaring out to where the roots lift the paving.
     if (far) b.bar([x, 0, z], [x, band, z], trunkR * 1.3, trunkR * 1.06, WHITEWASH, 6);
-    else b.lathe(x, z, [[trunkR * 1.5, 0.17], [trunkR * 1.24, 0.4], [trunkR * 1.1, band * 0.62], [trunkR * 1.06, band]], WHITEWASH, 9);
+    else b.lathe(x, z, [[trunkR * 1.32, 0.17], [trunkR * 1.18, 0.4], [trunkR * 1.09, band * 0.62], [trunkR * 1.06, band]], WHITEWASH, 9);
     b.bar([x, band, z], fork, trunkR * 1.06, trunkR * 0.92, form.bark, 7);
   });
   const clumps = placeClumps(form, x, z, h, own, far);

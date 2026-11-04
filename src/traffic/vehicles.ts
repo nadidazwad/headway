@@ -1,6 +1,7 @@
 import type { Assets, PersonPose } from "../assets";
 import type { Batch, Vec3 } from "../geometry";
 import type { Rng } from "../shared/rng";
+import type { Kind } from "./flow";
 
 /** Every vehicle's nose lies along -x, wheels on y = 0. */
 
@@ -114,4 +115,26 @@ export function motorbikeWithRider(b: Batch, assets: Assets, rng: Rng): void {
   b.stamp(assets.prop("pulsar", "lo"), 0.95);
   rider(b, assets, 0.02, 0.86, 0, 1, "sit", -Math.PI / 2, man(assets, rng));
   if (rng.chance(0.35)) rider(b, assets, 0.42, 0.9, 0, 1.05, "sit", -Math.PI / 2, wholeCast(assets, rng));
+}
+
+const RICKSHAW_SEATS = { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 };
+
+/** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
+function seatRiders(b: Batch, assets: Assets, rng: Rng): void {
+  const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_02-lungi");
+  b.at(RICKSHAW_SEATS.pullerX, RICKSHAW_SEATS.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "far"), 0.9), -Math.PI / 2);
+  const fare = rng.int(0, assets.avatars.length - 1);
+  b.at(RICKSHAW_SEATS.fareX, RICKSHAW_SEATS.fareY, 0, () => b.stamp(assets.person(fare, "sit", "far"), 1.1), -Math.PI / 2);
+}
+
+/** Draws one kind of vehicle with whoever is on it, nose along -x, wheels on y = 0. */
+export function drawVehicle(b: Batch, kind: Kind, assets: Assets, rng: Rng): void {
+  if (kind === "bike") motorbikeWithRider(b, assets, rng);
+  else if (kind === "bicycle") bicycleWithRider(b, assets, rng);
+  else if (kind === "pedal_goods") pedalVan(b, assets, "goods", rng);
+  else if (kind === "pedal_people") pedalVan(b, assets, "people", rng);
+  else {
+    b.stamp(assets.prop(kind, "lo"));
+    if (kind === "rickshaw_fan" || kind === "rickshaw_cycle") seatRiders(b, assets, rng);
+  }
 }

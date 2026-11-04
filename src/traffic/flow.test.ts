@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { MAIN_GREEN, SIGNAL_CYCLE, mainSignal, type SideStreet } from "../world/plan";
-import { SPECS, createFlow, type Flow, type Vehicle } from "./flow";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { loadAssets } from "../assets/library";
+import { Batch } from "../geometry";
+import { Rng } from "../shared/rng";
+import { KERB_FACE, MEDIAN_HALF } from "../world/layout";
+import { MAIN_GREEN, SIGNAL_CYCLE, junctionsBetween, mainSignal, type SideStreet } from "../world/plan";
+import { SPECS, createFlow, type Flow, type Kind, type Vehicle } from "./flow";
+import { drawVehicle } from "./vehicles";
 
 const FROM = 0;
 const TO = 520;
@@ -90,4 +97,61 @@ describe("traffic flow", () => {
     const through = heads.filter((v) => v.direction * (v.s - junction.centre) > junction.half);
     expect(through.length).toBeGreaterThanOrEqual(heads.length - 2);
   });
+
+  it("simulates every vehicle at least as big as it is drawn, riders included", async () => {
+    vi.stubGlobal("fetch", async (url: string) => new Response(await readFile(join("public", url))));
+    const assets = await loadAssets("/");
+    for (const kind of Object.keys(SPECS) as Kind[]) {
+      for (let seed = 1; seed <= 40; seed++) {
+        const b = new Batch(1 << 12);
+        b.cull = false;
+        drawVehicle(b, kind, assets, new Rng(seed));
+        const { min, max } = b.finish();
+        expect(Math.max(-min[2], max[2]) * 2, `${kind} width`).toBeLessThanOrEqual(SPECS[kind].width + 0.01);
+        expect(Math.max(-min[0], max[0]) * 2, `${kind} length`).toBeLessThanOrEqual(SPECS[kind].length + 0.01);
+      }
+    }
+  });
+
+  it("never lets a corner of anything on wheels cross a kerb, whatever it is doing", () => {
+    const overshoot = new Map<string, number>();
+    const worst = (what: string, by: number): void => {
+      if (by > (overshoot.get(what) ?? 0)) overshoot.set(what, by);
+    };
+    const seen = { laneChange: 0, halted: 0, breaker: 0, crossing: 0, kinds: new Set<Kind>() };
+    for (let seed = 1; seed <= 8; seed++) {
+      let distance = 4000 + seed * 137;
+      const streets = new Map<number, SideStreet>();
+      const flow = createFlow({ seed, junctionsBetween: (from, to) => junctionsBetween(seed, from, to), from: distance - 300, to: distance + 220 });
+      for (let step = 0; step < 4000; step++) {
+        const dt = step % 3 === 0 ? 0.1 : 0.033;
+        distance += 10.5 * dt;
+        flow.step(dt, step * 0.05, distance - 300, distance + 220);
+        for (const v of flow.vehicles) {
+          const { length, width } = SPECS[v.kind];
+          // The furthest any corner reaches sideways from the middle of the vehicle, at this heading.
+          const reach = (length / 2) * Math.abs(Math.sin(v.yaw)) + (width / 2) * Math.abs(Math.cos(v.yaw));
+          const across = v.direction * v.z;
+          worst(`${v.kind} over the kerb`, across + reach - KERB_FACE);
+          worst(`${v.kind} on the median`, MEDIAN_HALF - (across - reach));
+          seen.kinds.add(v.kind);
+          if (v.change < 1) seen.laneChange++;
+          if (v.halt > 0) seen.halted++;
+          if (v.lift > 0.01) seen.breaker++;
+        }
+        for (const c of flow.crossers) {
+          if (!streets.has(c.junction)) streets.set(c.junction, junctionsBetween(seed, c.junction - 1, c.junction + 1)[0]!);
+          const street = streets.get(c.junction)!;
+          const { length, width } = SPECS[c.kind];
+          seen.crossing++;
+          // Off the carriageway it must keep between the corners of its side street.
+          if (Math.abs(c.z) + length / 2 > KERB_FACE) worst(`${c.kind} on the corner of a side street`, Math.abs(c.s - c.junction) + width / 2 - street.half);
+        }
+      }
+    }
+    // Every situation the road can get into really happened, or this proves nothing.
+    expect(seen.kinds.size).toBe(Object.keys(SPECS).length);
+    for (const count of [seen.laneChange, seen.halted, seen.breaker, seen.crossing]) expect(count).toBeGreaterThan(500);
+    expect([...overshoot].map(([what, by]) => `${what} by ${by.toFixed(2)} m`)).toEqual([]);
+  }, 30000);
 });

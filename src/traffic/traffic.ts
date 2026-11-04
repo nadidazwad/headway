@@ -3,10 +3,10 @@ import type { Assets } from "../assets";
 import { Batch } from "../geometry";
 import { toBufferGeometry } from "../render";
 import { Rng, hashSeed } from "../shared/rng";
-import { junctionsBetween } from "../world/plan";
+import { junctionsBetween, streetLevel } from "../world/plan";
 import { ROAD_HALF } from "../world/layout";
 import { CROSSERS_PER_JUNCTION, CROSS_MIX, createFlow, type Kind } from "./flow";
-import { bicycleWithRider, motorbikeWithRider, pedalVan } from "./vehicles";
+import { drawVehicle } from "./vehicles";
 
 export interface Traffic {
   group: Group;
@@ -20,30 +20,11 @@ const BEHIND = 300;
 const JUNCTIONS_AT_ONCE = 6;
 const KINDS: Kind[] = ["sedan", "wagon", "e180", "suv", "taxi", "van", "cng", "rickshaw_fan", "rickshaw_cycle", "bus_town", "bike", "bicycle", "pedal_goods", "pedal_people"];
 
-const RICKSHAW_SEATS = {
-  rickshaw_fan: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
-  rickshaw_cycle: { pullerX: -0.42, pullerY: 0.42, fareX: 0.6, fareY: 0.18 },
-};
-
 const WALKING_CAST = ["Male_Adult_08", "Female_Adult_10", "Female_Adult_02-shalwar", "Male_Adult_15", "Female_Adult_07-shari", "Male_Adult_09", "Female_Adult_15-shalwar", "Male_Adult_02-panjabi"];
 const PER_FRAME_POOL = 14;
 /** The band of pavement people walk in: inside the kerb's poles and trees, outside the stalls and stairs. */
 const WALK_INNER = ROAD_HALF + 1.45;
 const WALK_OUTER = ROAD_HALF + 2.4;
-
-const sideStreetY = (z: number): number => {
-  const t = Math.min(1, Math.max(0, (Math.abs(z) - (ROAD_HALF - 0.9)) / 1.8));
-  return 0.03 + 0.19 * t * t * (3 - 2 * t);
-};
-
-/** A rickshaw is never empty for long: the puller, and usually a fare under the hood. */
-function seatRiders(b: Batch, assets: Assets, name: Kind, rng: Rng): void {
-  const seat = RICKSHAW_SEATS[name as "rickshaw_fan" | "rickshaw_cycle"];
-  const puller = assets.avatars.findIndex((a) => a.name === "Male_Adult_02-lungi");
-  b.at(seat.pullerX, seat.pullerY, 0, () => b.stamp(assets.person(Math.max(0, puller), "sit", "far"), 0.9), -Math.PI / 2);
-  const fare = rng.int(0, assets.avatars.length - 1);
-  b.at(seat.fareX, seat.fareY, 0, () => b.stamp(assets.person(fare, "sit", "far"), 1.1), -Math.PI / 2);
-}
 
 /**
  * Road and pavement life, drawn from the simulation in `flow.ts`. Each kind of vehicle is one
@@ -66,14 +47,7 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
     const count = flow.vehicles.filter((v) => v.kind === name).length + crossShare(name);
     const b = new Batch(1 << 12);
     b.cull = false;
-    if (name === "bike") motorbikeWithRider(b, assets, rng);
-    else if (name === "bicycle") bicycleWithRider(b, assets, rng);
-    else if (name === "pedal_goods") pedalVan(b, assets, "goods", rng);
-    else if (name === "pedal_people") pedalVan(b, assets, "people", rng);
-    else {
-      b.stamp(assets.prop(name, "lo"));
-      if (name === "rickshaw_fan" || name === "rickshaw_cycle") seatRiders(b, assets, name, rng);
-    }
+    drawVehicle(b, name, assets, rng);
     const geometry = toBufferGeometry(b.finish());
     const mesh = new InstancedMesh(geometry, material, Math.max(count, 1));
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -159,7 +133,7 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw, 0.03 + v.lift, v.pitch);
       // The model's nose points along -x at rest; a crosser heading +z turns a quarter left.
       // Side streets meet the road at pavement height, so a crosser rises over the kerb onto them.
-      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, sideStreetY(c.z) + c.lift, c.pitch);
+      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, streetLevel(c.z) + c.lift, c.pitch);
       instanced.forEach((mesh, k) => {
         mesh.count = used[k]!;
         mesh.instanceMatrix.needsUpdate = true;

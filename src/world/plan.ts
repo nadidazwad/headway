@@ -57,6 +57,15 @@ export const ALL_RED = 2;
 export const HUMP_HALF = 0.75;
 export const HUMP_HEIGHT = 0.085;
 
+/**
+ * How high the ground is across a side street's mouth: road level out to where the ramp starts,
+ * pavement level past it. The street is drawn on this and the traffic rides on it, so they agree.
+ */
+export function streetLevel(z: number): number {
+  const t = Math.min(1, Math.max(0, (Math.abs(z) - (ROAD_HALF - 0.9)) / 1.8));
+  return 0.03 + 0.18 * t * t * (3 - 2 * t);
+}
+
 /** Height of the road above its level at this distance from a breaker's crest. */
 export function humpHeight(offset: number): number {
   const u = Math.abs(offset) / HUMP_HALF;

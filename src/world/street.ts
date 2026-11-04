@@ -1,9 +1,23 @@
 import { Surface, type Batch, type Vec3 } from "../geometry";
 import type { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
-import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Cells, type Context } from "./layout";
+import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, KERB_FACE, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Cells, type Context } from "./layout";
 import { tree } from "./nature";
-import { HUMP_HALF, humpHeight, type Humps } from "./plan";
+import { HUMP_HALF, humpHeight, streetLevel, type Humps } from "./plan";
+
+type Gaps = ReadonlyArray<readonly [number, number]>;
+
+/** What is left of [from, to] once the gaps are taken out, in order. */
+function between(from: number, to: number, gaps: Gaps): Array<readonly [number, number]> {
+  const out: Array<readonly [number, number]> = [];
+  let cursor = from;
+  for (const [a, c] of [...gaps].sort((p, q) => p[0] - q[0])) {
+    if (a > cursor) out.push([cursor, Math.min(a, to)]);
+    cursor = Math.max(cursor, c);
+  }
+  if (cursor < to) out.push([cursor, to]);
+  return out;
+}
 
 /** The stretch of main road under the viaduct, its median, kerbs and pavements. */
 /** `junctions` are the local x ranges where a side street meets the road and the median opens. */
@@ -16,12 +30,12 @@ export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: Reado
   b.as(Surface.asphalt, () => b.quad([x0, 0.02, ROAD_HALF], [x1, 0.02, ROAD_HALF], [x1, 0.02, -ROAD_HALF], [x0, 0.02, -ROAD_HALF], city.road, [0, 1, 0]));
 
   // Lane dashes, in line position so they stay continuous across chunks, worn like the tar under them.
-  b.as(Surface.asphalt, () => laneMarks(b, context, rng));
+  b.as(Surface.asphalt, () => laneMarks(b, context, rng, junctions));
   buildMedian(b, context, junctions);
-  for (const side of [1, -1]) buildPavement(b, context, side);
+  for (const side of [1, -1]) buildPavement(b, context, side, junctions);
 }
 
-function laneMarks(b: Batch, context: Context, rng: Rng): void {
+function laneMarks(b: Batch, context: Context, rng: Rng, junctions: Gaps): void {
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   for (const distance of latticeIn(context, 6)) {
@@ -31,9 +45,12 @@ function laneMarks(b: Batch, context: Context, rng: Rng): void {
       b.quad([x - 2.8, 0.03, z + 0.07], [x, 0.03, z + 0.07], [x, 0.03, z - 0.07], [x - 2.8, 0.03, z - 0.07], city.roadLine, [0, 1, 0]);
     }
   }
-  // Solid edge lines along the median and the kerb.
-  for (const z of [MEDIAN_HALF + 0.3, -(MEDIAN_HALF + 0.3), ROAD_HALF - 0.3, -(ROAD_HALF - 0.3)]) {
+  // Solid edge lines along the median and the kerb: the kerb's stop where a side street opens.
+  for (const z of [MEDIAN_HALF + 0.3, -(MEDIAN_HALF + 0.3)]) {
     b.quad([x0, 0.03, z + 0.06], [x1, 0.03, z + 0.06], [x1, 0.03, z - 0.06], [x0, 0.03, z - 0.06], city.roadLine, [0, 1, 0]);
+  }
+  for (const z of [ROAD_HALF - 0.3, -(ROAD_HALF - 0.3)]) {
+    for (const [a, c] of between(x0, x1, junctions)) b.quad([a, 0.03, z + 0.06], [c, 0.03, z + 0.06], [c, 0.03, z - 0.06], [a, 0.03, z - 0.06], city.roadLine, [0, 1, 0]);
   }
   // Worn patches of darker tar, because every road here has been dug up at least twice.
   const patches = rng.int(2, 5);
@@ -45,11 +62,11 @@ function laneMarks(b: Batch, context: Context, rng: Rng): void {
 
 }
 
-function kerbStripes(b: Batch, context: Context, z: number, top: number, height: number): void {
+function kerbStripes(b: Batch, context: Context, z: number, top: number, height: number, junctions: Gaps): void {
   for (const distance of latticeIn(context, 1)) {
     const x = localX(context, distance);
     const dark = Math.floor(distance) % 2 === 0;
-    b.box(x - 1, 0, z - 0.14, x, top + height, z + 0.14, dark ? city.kerbDark : city.kerbLight);
+    for (const [a, c] of between(x - 1, x, junctions)) b.box(a, 0, z - 0.14, c, top + height, z + 0.14, dark ? city.kerbDark : city.kerbLight);
   }
 }
 
@@ -76,26 +93,50 @@ function buildMedian(b: Batch, context: Context, junctions: ReadonlyArray<readon
   }
 }
 
-function buildPavement(b: Batch, context: Context, side: number): void {
+function buildPavement(b: Batch, context: Context, side: number, junctions: Gaps): void {
   const inner = side * ROAD_HALF;
   const outer = side * SIDEWALK_HALF;
   const z0 = Math.min(inner, outer);
   const z1 = Math.max(inner, outer);
+  // The pavement and its kerb stop at a side street's mouth, and start again on its far corner.
   b.part();
-  b.as(Surface.paving, () => b.box(-CHUNK_LENGTH, 0, z0, 0, 0.2, z1, city.sidewalk));
-  b.as(Surface.concrete, () => kerbStripes(b, context, inner, 0.21, 0));
+  for (const [a, c] of between(-CHUNK_LENGTH, 0, junctions)) b.as(Surface.paving, () => b.box(a, 0, z0, c, 0.2, z1, city.sidewalk));
+  b.as(Surface.concrete, () => kerbStripes(b, context, inner, 0.21, 0, junctions));
   // Pavers and the drain slabs that are never quite level.
   for (const distance of latticeIn(context, 3)) {
     const x = localX(context, distance);
+    if (junctions.some(([a, c]) => x > a - 0.03 && x < c + 0.03)) continue;
     b.quad([x - 0.02, 0.205, z1], [x + 0.02, 0.205, z1], [x + 0.02, 0.205, z0], [x - 0.02, 0.205, z0], city.paver, [0, 1, 0]);
   }
 }
 
+/** Where the ramp at a side street's mouth ends, and the street runs on at pavement height. */
+const RAMP_END = ROAD_HALF + 0.9;
+const RAMP_STEPS = [ROAD_HALF - 0.9, ROAD_HALF - 0.45, ROAD_HALF, ROAD_HALF + 0.45, RAMP_END];
+
 /** A side street running away from the main road, with its own crossing and building gap. */
 export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean, rng: Rng): void {
-  for (const [z0, z1] of [[SIDEWALK_HALF - 4.5, FAR_FRONT], [FAR_BACK, -SIDEWALK_HALF + 4.5]] as const) {
+  for (const [z0, z1] of [[RAMP_END, FAR_FRONT], [FAR_BACK, -RAMP_END]] as const) {
     b.part();
     b.as(Surface.asphalt, () => b.quad([x0, 0.21, z1], [x1, 0.21, z1], [x1, 0.21, z0], [x0, 0.21, z0], 0x85848a, [0, 1, 0]));
+  }
+  // The mouth: the street comes down to the road in one easy ramp, with the kerb turning in at each corner.
+  for (const side of [1, -1]) {
+    b.part();
+    b.as(Surface.asphalt, () => {
+      for (let i = 0; i + 1 < RAMP_STEPS.length; i++) {
+        const a = RAMP_STEPS[i]!;
+        const c = RAMP_STEPS[i + 1]!;
+        b.quad([x0, streetLevel(c), side * c], [x1, streetLevel(c), side * c], [x1, streetLevel(a), side * a], [x0, streetLevel(a), side * a], 0x85848a, [0, 1, 0]);
+      }
+    });
+    const near = Math.min(side * KERB_FACE, side * (RAMP_END + 0.2));
+    const far = Math.max(side * KERB_FACE, side * (RAMP_END + 0.2));
+    b.part();
+    b.as(Surface.concrete, () => {
+      b.box(x0 - 0.28, 0, near, x0, 0.21, far, city.kerbDark);
+      b.box(x1, 0, near, x1 + 0.28, 0.21, far, city.kerbDark);
+    });
   }
   void rng;
   // Zebra crossing over the main road.
@@ -224,7 +265,7 @@ export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, c
       const x = localX(context, distance) + rng.range(-3, 3);
       if (!clearX(x, side)) continue;
       // In the kerb band, with the poles, so the strip people walk in stays clear.
-      const treeZ = side * (ROAD_HALF + 0.85);
+      const treeZ = side * (ROAD_HALF + 0.95);
       const h = rng.range(6.5, side > 0 ? 8.5 : 11);
       tree(cells.at(x, treeZ), x, treeZ, h, rng);
     }
