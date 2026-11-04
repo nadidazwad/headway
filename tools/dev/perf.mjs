@@ -22,7 +22,7 @@ await new Promise((r) => (ws.onopen = r));
 let id = 0; const pending = new Map();
 ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id); } };
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
-const ev = async (expression) => (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })).result?.value;
+const ev = async (expression) => (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture: true })).result?.value;
 await send("Emulation.setDeviceMetricsOverride", { width: +width, height: +height, deviceScaleFactor: 1, mobile: false });
 for (let i = 0; i < 200; i++) { const ok = await ev("!!(window.__metro && window.__metro.world.loaded>0 && window.__metro.world.pending===0)"); if (ok) break; await sleep(300); }
 await sleep(1500);

@@ -1,6 +1,7 @@
 import "./ui/fonts";
 import { Mesh, Scene, Vector3 } from "three";
 import { loadAssets } from "./assets";
+import { createSoundscape } from "./audio";
 import { createCameraRig } from "./camera";
 import { Batch } from "./geometry";
 import { createPipeline, toBufferGeometry } from "./render";
@@ -17,6 +18,9 @@ const debug = import.meta.env.DEV;
 const debugNumber = (name: string): number | null => (debug && params.has(name) ? Number(params.get(name)) : null);
 const seed = params.has("seed") ? Number(params.get("seed")) : Math.floor(Math.random() * 1e9);
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const sound = createSoundscape();
+// Browsers allow sound only from inside a gesture, and the wheel is not one: the first click, tap or key starts it.
+for (const gesture of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) window.addEventListener(gesture, () => sound.start(), { passive: true });
 
 const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
 const pipeline = createPipeline(canvas);
@@ -38,6 +42,7 @@ scene.add(opposing.group);
 const CRUISE = 10.5;
 const OPPOSING_SPEED = 10.5;
 let distance = debugNumber("at") ?? 4000 + (seed % 5000);
+void world.whenReady().then(() => sound.load());
 const traffic = createTraffic(pipeline.solid, assets, seed, distance);
 scene.add(traffic.group);
 let opposingX = -700;
@@ -194,9 +199,14 @@ let lastInput = performance.now();
 const overlay = createOverlay(document.querySelector<HTMLElement>("#overlay")!, (id) => {
   lastInput = performance.now();
   bubbleTimer = 0;
+  showThought(id);
+});
+
+function showThought(id: string | null): void {
   openBubbleId = id;
   overlay.openBubble(id);
-});
+  if (id) sound.thought();
+}
 
 const targetAt = (px: number, py: number): Target | null => {
   const { origin, direction } = rig.ray(px, py, innerWidth, innerHeight);
@@ -231,6 +241,8 @@ const aim = {
 };
 
 function focusOn(target: Target | null): void {
+  if (target && target !== focused) sound.open();
+  else if (!target && focused) sound.close();
   focused = target;
   if (target) {
     aim.width = carWidth(target);
@@ -260,7 +272,7 @@ function zoomAt(px: number, py: number, factor: number): void {
   aim.focus.x = Math.min(TRAIN_LENGTH + 30, Math.max(-40, aim.focus.x));
   aim.focus.y = Math.min(RAIL_Y + 30, Math.max(-5, aim.focus.y));
   aim.focus.z = Math.min(35, Math.max(-35, aim.focus.z));
-  if (after >= WIDE_WIDTH() * 0.98) focused = null;
+  if (after >= WIDE_WIDTH() * 0.98 && focused) focusOn(null);
 }
 
 const pointer = { x: -1, y: -1, inside: false };
@@ -319,9 +331,8 @@ canvas.addEventListener("click", (event) => {
     const { hit, passenger } = focused.riders.pick(origin, direction);
     if (hit) {
       if (passenger?.thought && focused.speakers().includes(passenger)) {
-        openBubbleId = passenger.id;
         bubbleTimer = 0;
-        overlay.openBubble(passenger.id);
+        showThought(passenger.id);
       }
       return;
     }
@@ -415,6 +426,7 @@ function updateHover(dt: number): void {
     if (under !== hovered) {
       hovered = under;
       hoverTime = 0;
+      if (under) sound.hover();
     }
     canvas.style.cursor = under ? "pointer" : "grab";
   } else if (orbit.holding) {
@@ -447,9 +459,8 @@ function updateHover(dt: number): void {
     shownBubbles = showing;
     const list = showing ? showing.speakers() : [];
     overlay.setBubbles(list);
-    openBubbleId = list[0]?.id ?? null;
     bubbleTimer = 0;
-    overlay.openBubble(openBubbleId);
+    showThought(list[0]?.id ?? null);
   }
 }
 
@@ -471,6 +482,18 @@ function updateCameraAim(time: number): void {
   const elevation = FILM_ELEVATION + (1 - wide) * 4 + orbit.elevation;
   target.azimuth = debugNumber("az") ?? clamp(azimuth, AZIMUTH_LIMITS);
   target.elevation = debugNumber("el") ?? clamp(elevation, ELEVATION_LIMITS);
+}
+
+/** What the ears get each frame: how open the coach really is, so the sound moves with the picture. */
+function updateSound(): void {
+  let coach = 0;
+  let cabin = 0;
+  for (const car of train.cars) {
+    coach = Math.max(coach, car.openness);
+    cabin = Math.max(cabin, car.cabin?.openness ?? 0);
+  }
+  const listeningAt = focused ? (focused.x0 + focused.x1) / 2 : Math.min(TRAIN_LENGTH, Math.max(0, aim.focus.x));
+  sound.update({ distance, viewWidth: rig.width, inside: Math.max(coach, cabin), at: listeningAt, alone: cabin > coach });
 }
 
 const planeA = { x: 0, y: 0 };
@@ -536,8 +559,7 @@ function updateTags(dt: number): void {
       speaker.thought = nextThought(shownBubbles.theme, speaker, thoughtRng);
       overlay.updateBubble(speaker);
     }
-    openBubbleId = list[(index + 1) % list.length]!.id;
-    overlay.openBubble(openBubbleId);
+    showThought(list[(index + 1) % list.length]!.id);
   }
 }
 
@@ -568,6 +590,7 @@ function frame(now: number): void {
   traffic.update(distance, moving ? time : 0, moving ? dt : 0, rig.camera);
   const t2 = performance.now();
   updateTags(dt);
+  updateSound();
   adaptQuality(dt);
   pipeline.setViewWidth(rig.width);
   pipeline.setDistance(distance);
@@ -603,6 +626,7 @@ if (debug) {
       pipeline,
       train,
       traffic,
+      sound,
       opposing,
       cpu,
       seed,
