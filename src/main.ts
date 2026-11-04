@@ -10,7 +10,7 @@ import { createAtlas } from "./signs/atlas";
 import { nextThought, operatorFor, rosterFor, type Passenger } from "./thoughts";
 import { createTraffic } from "./traffic";
 import { CAB_DEPTH, CAR_LENGTH, NOSE_AT, TRAIN_LENGTH, createRiders, createTrain, type Riders, type TrainCar } from "./train";
-import { createOverlay, type Point } from "./ui";
+import { createMinimalSwitch, createOverlay, readMinimal, type Point } from "./ui";
 import { RAIL_Y, TRACK_Z, createWorld } from "./world";
 
 const params = new URLSearchParams(location.search);
@@ -22,10 +22,14 @@ const sound = createSoundscape();
 // Browsers allow sound only from inside a gesture, and the wheel is not one: the first click, tap or key starts it.
 for (const gesture of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) window.addEventListener(gesture, () => sound.start(), { passive: true });
 
+/** Whether someone arriving for the first time gets minimal mode. After that, the site remembers their choice. */
+const MINIMAL_BY_DEFAULT = false;
+let minimal = debug && params.has("minimal") ? params.get("minimal") !== "0" : readMinimal(MINIMAL_BY_DEFAULT);
+
 const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
 const pipeline = createPipeline(canvas);
 const scene = new Scene();
-const world = createWorld(pipeline.solid, pipeline.lineMaterial, seed);
+const world = createWorld(pipeline.solid, pipeline.lineMaterial, seed, minimal);
 scene.add(world.group);
 pipeline.lineScene.add(world.lines);
 const train = createTrain(pipeline);
@@ -74,7 +78,8 @@ const rendererInfo = gl.getExtension("WEBGL_debug_renderer_info");
 const gpuName = rendererInfo ? String(gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL)) : "";
 const integrated = /intel|mali|adreno|powervr|swiftshader|llvmpipe|apple gpu/i.test(gpuName);
 const fixedRatio = debugNumber("pr");
-const maxRatio = fixedRatio ?? Math.min(devicePixelRatio || 1, 2);
+const fullRatio = fixedRatio ?? Math.min(devicePixelRatio || 1, 2);
+let maxRatio = fullRatio;
 const quality = {
   ratio: integrated ? Math.min(maxRatio, 1) : maxRatio,
   samples: debugNumber("msaa") ?? (integrated ? 2 : 4),
@@ -126,6 +131,23 @@ function adaptQuality(dt: number): void {
     }
   }
 }
+
+/** Minimal mode lets the whole picture go: less drawn, less shaded, and fewer pixels on a sharp screen. */
+function applyMinimal(on: boolean): void {
+  minimal = on;
+  world.setMinimal(on);
+  traffic.setMinimal(on);
+  pipeline.setMinimal(on);
+  pipeline.setShadows(!on && debugNumber("shadow") !== 0);
+  // Multisampling is the largest single cost left once the detail has gone: the composite softens edges instead.
+  pipeline.setSamples(on ? (debugNumber("msaa") ?? 0) : quality.samples);
+  maxRatio = on ? Math.min(fullRatio, 1.5) : fullRatio;
+  if (quality.ratio > maxRatio) {
+    quality.ratio = maxRatio;
+    resize();
+  }
+}
+applyMinimal(minimal);
 
 void createAtlas(pipeline.renderer.capabilities.getMaxAnisotropy()).then((atlas) => pipeline.setAtlas(atlas));
 
@@ -213,6 +235,8 @@ const overlay = createOverlay(
     bubbleTimer = THOUGHT_SECONDS - AFTER_LEAVING;
   },
 );
+
+createMinimalSwitch(document.querySelector<HTMLElement>("#overlay")!, minimal, applyMinimal);
 
 function showThought(id: string | null): void {
   openBubbleId = id;
@@ -613,7 +637,7 @@ function frame(now: number): void {
     if (opposingX > 520) opposingX = -520 - Math.random() * 1300;
   }
   opposing.group.position.x = opposingX;
-  opposing.group.visible = !reducedMotion && opposingX > -420;
+  opposing.group.visible = !minimal && !reducedMotion && opposingX > -420;
   if (opposing.group.visible) opposing.update(time, distance * 2);
 
   const t3 = performance.now();
@@ -643,6 +667,7 @@ if (debug) {
       cpu,
       seed,
       focusOn,
+      applyMinimal,
       targets,
       aim,
       ready: () => world.whenReady(),

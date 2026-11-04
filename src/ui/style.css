@@ -233,6 +233,61 @@ body {
   }
 }
 
+/* The one control on screen. Quiet enough to forget, and on its own, flat, not in the coach's plane. */
+.minimal-switch {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(10px + env(safe-area-inset-left));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 11px 0 9px;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.1em;
+  color: rgba(35, 39, 42, 0.72);
+  background: rgba(247, 249, 242, 0.92);
+  border: 1px solid rgba(35, 39, 42, 0.28);
+  border-radius: 9px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.minimal-switch::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  transition: background-color 0.16s ease;
+}
+
+.minimal-switch[aria-pressed="true"]::before {
+  background: currentColor;
+}
+
+.minimal-switch[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+.minimal-switch:hover {
+  color: var(--ink);
+  border-color: rgba(35, 39, 42, 0.6);
+}
+
+.minimal-switch:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .minimal-switch {
+    min-height: 40px;
+    padding: 0 14px 0 12px;
+  }
+}
+
 .credits {
   position: absolute;
   right: 8px;

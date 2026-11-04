@@ -122,16 +122,16 @@ export function emptyLot(b: Batch, assets: Assets, plot: Plot, rng: Rng): void {
     }
     b.part();
     b.as(Surface.soil, () => b.quad([x0 + 3, 0.02, z1 - 2.5], [x1 - 3, 0.02, z1 - 2.5], [x1 - 3, 0.02, z0 + 2.5], [x0 + 3, 0.02, z0 + 2.5], 0xcbbf9c, [0, 1, 0]));
-    const players = rng.int(5, 9);
+    const players = plot.minimal ? 0 : rng.int(5, 9);
     for (let i = 0; i < players; i++) {
       bystander(b, assets, rng.range(x0 + 2, x1 - 2), 0.02, rng.range(z0 + 2, z1 - 2), rng.range(0, Math.PI * 2), rng);
     }
     b.part();
     b.ellipsoid(rng.range(x0 + 4, x1 - 4), 0.13, rng.range(z0 + 3, z1 - 3), 0.11, 0.11, 0.11, 0xf4f1e7, 4, 6);
-    tree(b, x0 + 1.4, backZ - side * 1.4, rng.range(7, 10), rng, { far: plot.lod > 0 && plot.z0 < 0 });
+    tree(b, x0 + 1.4, backZ - side * 1.4, rng.range(7, 10), rng, { far: plot.minimal || (plot.lod > 0 && plot.z0 < 0) });
   } else {
     // Weeds, a heap of builder's rubble, a tree or two, a palm.
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < (plot.minimal ? 0 : 14); i++) {
       b.part();
       const r = rng.range(0.25, 0.6);
       b.as(Surface.foliage, () => b.blob(rng.range(x0 + 1, x1 - 1), r * 0.3, rng.range(z0 + 1, z1 - 1), r, r * 0.55, r, rng.pick([0xa7af9d, 0x9aa391, 0xb3b9a8]), 0.6, rng.int(1, 1 << 30), 0));
@@ -144,8 +144,8 @@ export function emptyLot(b: Batch, assets: Assets, plot: Plot, rng: Rng): void {
     for (let i = 0; i < trees; i++) {
       const tx = rng.range(x0 + 2.5, x1 - 2.5);
       const tz = rng.range(z0 + 2.5, z1 - 2.5);
-      if (rng.chance(0.4)) palm(b, tx, tz, rng.range(7, 11), rng, plot.lod > 0 && plot.z0 < 0);
-      else tree(b, tx, tz, rng.range(7, 12), rng, { far: plot.lod > 0 && plot.z0 < 0 });
+      if (rng.chance(0.4)) palm(b, tx, tz, rng.range(7, 11), rng, plot.minimal || (plot.lod > 0 && plot.z0 < 0));
+      else tree(b, tx, tz, rng.range(7, 12), rng, { far: plot.minimal || (plot.lod > 0 && plot.z0 < 0) });
     }
     // Posters pasted on the wall facing the road.
     if (kind === "plaster") {

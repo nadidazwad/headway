@@ -43,6 +43,8 @@ export interface Pipeline {
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
   setHaze(start: number, end: number): void;
+  /** Minimal mode: no surface weathering, and the city dissolves into paper close behind the line. */
+  setMinimal(on: boolean): void;
   /** How far the train has come: the city's surface textures are pinned to the line by it. */
   setDistance(metres: number): void;
   /** Lets lines between small parts fade as the camera pulls back, so a wide view never turns to noise. */
@@ -94,6 +96,13 @@ function gpuTimer(gl: WebGL2RenderingContext, on: boolean): { begin(name: string
   };
 }
 
+/** Where haze starts and ends behind the line, in metres of z. */
+const HAZE = [12, 78] as const;
+const MINIMAL_HAZE = [9, 46] as const;
+/** Where the generated city dissolves entirely: from and to in front of the line, then behind it. */
+const EDGE = [92, 124, 128, 170] as const;
+const MINIMAL_EDGE = [40, 62, 46, 66] as const;
+
 /**
  * Draws colour and a geometry buffer in one multisampled pass, then inks every edge in a
  * second one. The lines come from the buffer, so any solid in the world gets them for free.
@@ -125,6 +134,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     uAtlas: { value: null as Texture | null },
     uFocusDepth: { value: 0 },
     uLineWrap: { value: 0 },
+    uPlain: { value: 0 },
   };
 
   const solid = new ShaderMaterial({
@@ -146,6 +156,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     material.uniforms.uAtlas = shared.uAtlas;
     material.uniforms.uFocusDepth = shared.uFocusDepth;
     material.uniforms.uLineWrap = shared.uLineWrap;
+    material.uniforms.uPlain = shared.uPlain;
     Object.assign(material.uniforms, shadows.uniforms);
     material.uniforms.uNeutral!.value = neutral;
     return material;
@@ -168,7 +179,9 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uSkyTop: { value: new Color(0xf7f9f2) },
       uSkyBottom: { value: new Color(0xf6f8f0) },
       uInk: { value: new Color(0.42, 0.42, 0.41) },
-      uHaze: { value: new Vector2(12, 78) },
+      uHaze: { value: new Vector2(...HAZE) },
+      uEdge: { value: new Vector4(...EDGE) },
+      uSoften: { value: 0 },
       uFineInk: { value: 0.6 },
       uFocus: { value: new Vector3() },
       uRight: { value: new Vector3() },
@@ -186,6 +199,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uColor: composite.uniforms.uColor!,
       uData: composite.uniforms.uData!,
       uHaze: composite.uniforms.uHaze!,
+      uEdge: composite.uniforms.uEdge!,
       uForward: composite.uniforms.uForward!,
       uFocusDepth: shared.uFocusDepth,
       uPixel: { value: 0.04 },
@@ -237,6 +251,11 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     setHaze(start, end) {
       composite.uniforms.uHaze!.value.set(start, end);
     },
+    setMinimal(on) {
+      shared.uPlain.value = on ? 1 : 0;
+      composite.uniforms.uHaze!.value.set(...(on ? MINIMAL_HAZE : HAZE));
+      composite.uniforms.uEdge!.value.set(...(on ? MINIMAL_EDGE : EDGE));
+    },
     setViewWidth(metres) {
       const t = Math.min(1, Math.max(0, (metres - 20) / 70));
       composite.uniforms.uFineInk!.value = 0.8 - 0.42 * t;
@@ -246,6 +265,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       applySize();
     },
     setSamples(samples) {
+      composite.uniforms.uSoften!.value = samples === 0 ? 1 : 0;
       if (target.samples === samples) return;
       target.samples = samples;
       target.dispose();

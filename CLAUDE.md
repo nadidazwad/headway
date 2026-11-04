@@ -5,7 +5,7 @@ An endless browser experience: a six-car Line 6 train crossing a procedurally ge
 ## Rules from the owner
 - No stops or stations. The train runs forever. No film output.
 - Everything except the train is neutral grey, people included.
-- No on-screen controls. Mouse only: wheel zooms, hover names a coach (it does not open it), click opens a coach and zooms in, a click on empty space inside the open coach goes back to the default view, left-drag turns the camera within limits.
+- One on-screen control, the minimal mode button at the top left (`MINIMAL_BY_DEFAULT` in `main.ts`; the owner will decide its default). Otherwise mouse only: wheel zooms, hover names a coach (it does not open it), click opens a coach and zooms in, a click on empty space inside the open coach goes back to the default view, left-drag turns the camera within limits.
 - Thought and name cards lie in the coach's plane, as in the film, with soft corners.
 - Empty plots are walled (brick or plaster) and gated; playing fields get a low wall and a grille.
 - Prefer downloaded assets with a licence that allows it, then adapt them. Credit them in `public/credits.txt`.
@@ -28,4 +28,4 @@ An endless browser experience: a six-car Line 6 train crossing a procedurally ge
 - `pnpm dev` serves on 127.0.0.1:5180. `pnpm typecheck`, `pnpm test`, `pnpm build`.
 - Rebake: `node tools/bake-props.mjs tools/props.config.json public/props`; `node tools/bake-people.mjs asset-src/rocketbox public/people`; `node tools/bake-audio.mjs`.
 - Sound can't be judged by eye: `tools/dev/audio.mjs [dir] [states]` renders each state offline and measures peak, loudness, clicks and a spectrogram.
-- Dev URL params: `seed at az el w fx fy fz pr msaa notour freeze hold shadow gputime noweather`. `window.__metro` exists in dev only.
+- Dev URL params: `seed at az el w fx fy fz pr msaa notour freeze hold shadow gputime noweather minimal`. `window.__metro` exists in dev only.

@@ -281,6 +281,7 @@ uniform float uShadowOn;
 uniform vec4 uCutPlane;
 uniform float uCutEnabled;
 uniform float uNeutral;
+uniform float uPlain;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outData;
 
@@ -354,8 +355,10 @@ void main() {
     bool figure = vSurface > 10.5 && vSurface < 11.5;
     // So do leaves their shade: a crown needs its darks to read as depth, where a wall does not.
     value = printed ? 0.2 + 0.8 * value : figure ? 0.14 + 0.86 * pow(value, 0.85) : leafy || vSurface < 1.5 && vSurface > 0.5 ? 0.2 + 0.8 * pow(value, 0.8) : 0.42 + 0.58 * pow(value, 0.7);
+    // With no shadows to sit in, a crown's leaves would be bright shards: minimal mode settles them into one soft grey.
+    if (uPlain > 0.5 && leafy) value = mix(0.7, value, 0.42);
     #ifndef NO_WEATHER
-    value *= leafy ? 1.0 + smallest.y * 0.3 : weathering(vSurface, vLine, n);
+    value *= leafy ? 1.0 + smallest.y * 0.3 : uPlain > 0.5 ? 1.0 : weathering(vSurface, vLine, n);
     #endif
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
     float flatten = leafy || (vSurface > 0.5 && vSurface < 1.5) ? 0.12 : 0.36;
@@ -423,6 +426,7 @@ in float vDensity;
 uniform sampler2D uColor;
 uniform sampler2D uData;
 uniform vec2 uHaze;
+uniform vec4 uEdge;
 layout(location = 0) out vec4 outColor;
 
 void main() {
@@ -445,7 +449,7 @@ void main() {
   vec3 colour = vec3(0.985, 0.992, 0.965) * value * round * (1.0 - 0.5 * outline);
   float behind = smoothstep(uHaze.x, uHaze.y, -vWorldZ);
   behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
-  float far = max(smoothstep(92.0, 124.0, vWorldZ), smoothstep(128.0, 170.0, -vWorldZ));
+  float far = max(smoothstep(uEdge.x, uEdge.y, vWorldZ), smoothstep(uEdge.z, uEdge.w, -vWorldZ));
   float alpha = edge * mix(0.42, 1.0, vDensity) * (1.0 - max(min(behind, 0.965), far));
   if (alpha < 0.004) discard;
   outColor = vec4(colour, alpha);
@@ -471,6 +475,8 @@ uniform vec3 uSkyTop;
 uniform vec3 uSkyBottom;
 uniform vec3 uInk;
 uniform vec2 uHaze;
+uniform vec4 uEdge;
+uniform float uSoften;
 uniform float uFineInk;
 uniform vec3 uFocus;
 uniform vec3 uRight;
@@ -502,6 +508,15 @@ void main() {
   // A leaf's mark is 2: filtered against the sky it still reads over 1, which no other part ever does.
   if (max(c.w, max(l.w, max(r.w, max(d.w, u.w)))) > 1.02) line *= min(c.w, min(l.w, min(r.w, min(d.w, u.w)))) > 1.9 ? 0.06 : 0.16;
 
+  // With no multisampling, the edges just found are blended with what is round them: most of its softness, at a fraction of its cost.
+  if (uSoften > 0.5) {
+    float edgeHere = max(depthLine, max(normalLine, partLine));
+    if (edgeHere > 0.02) {
+      vec4 around = 0.25 * (texture(uColor, vUv - vec2(o.x, 0.0)) + texture(uColor, vUv + vec2(o.x, 0.0)) + texture(uColor, vUv - vec2(0.0, o.y)) + texture(uColor, vUv + vec2(0.0, o.y)));
+      color = mix(color, around, 0.62 * edgeHere);
+    }
+  }
+
   float coverage = color.a;
   vec3 solid = coverage > 0.001 ? color.rgb / coverage : vec3(0.0);
   vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(0.0, 1.0, vUv.y));
@@ -512,7 +527,7 @@ void main() {
   float behind = smoothstep(uHaze.x, uHaze.y, -world.z);
   behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
   // Both edges of the generated city dissolve into the paper rather than stopping.
-  float edge = max(smoothstep(92.0, 124.0, world.z), smoothstep(128.0, 170.0, -world.z));
+  float edge = max(smoothstep(uEdge.x, uEdge.y, world.z), smoothstep(uEdge.z, uEdge.w, -world.z));
   float haze = max(min(behind, 0.965), edge);
   vec3 inked = mix(solid, solid * uInk, line);
   vec3 scene = mix(inked, sky, haze);

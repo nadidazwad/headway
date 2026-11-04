@@ -10,8 +10,12 @@ export interface Plot {
   z0: number;
   x1: number;
   z1: number;
-  /** 0 close to the line, 1 middle distance, 2 far enough that only the massing reads. */
+  /** How much to draw: 0 everything, 1 less, 2 only the massing. */
   lod: 0 | 1 | 2;
+  /** Where it stands, the same in either mode: 0 close to the line, 1 middle distance, 2 far off. Sets its size and height, so the two modes show one city. */
+  place: 0 | 1 | 2;
+  /** Minimal mode: what stands here is drawn with nothing to spare. */
+  minimal: boolean;
   maxHeight: number;
   /** Whether the +Z face looks onto the main road. */
   streetFront: boolean;
@@ -430,7 +434,7 @@ function pickStyle(rng: Rng, lod: number): Style {
     trim: rng.chance(0.5) ? 0xf4f0e4 : mixHex(wall, 0xffffff, 0.45),
     bays: rng.pick(layouts),
     bayWidth: rng.range(2.9, 4.2),
-    grilles: lod === 0 && rng.chance(0.32),
+    grilles: rng.chance(0.32) && lod === 0,
     frame: rng.chance(0.7) ? city.frame : rng.chance(0.5) ? 0x6e5c4c : 0xf0ece0,
     glass,
   };
@@ -452,7 +456,7 @@ export function apartmentBlock(b: Batch, plot: Plot, rng: Rng): void {
   const depth = z1 - z0;
   const style = pickStyle(rng, lod);
   const maxFloors = Math.max(2, Math.floor((plot.maxHeight - 3.6) / FLOOR));
-  const floors = Math.min(maxFloors, rng.int(4, lod === 0 ? 9 : 11));
+  const floors = Math.min(maxFloors, rng.int(4, plot.place === 0 ? 9 : 11));
   const groundH = plot.streetFront ? 3.6 : 3.1;
   const height = groundH + floors * FLOOR;
 
@@ -515,11 +519,13 @@ export function stackedBlock(b: Batch, plot: Plot, rng: Rng): void {
   const { x0, x1, z0, z1, lod } = plot;
   const style = pickStyle(rng, lod);
   const tiers = Math.min(4, Math.max(2, Math.floor(plot.maxHeight / 9)));
+  // Settled before anything is drawn: detail spends random numbers, and must not change the building's shape.
+  const heights = Array.from({ length: tiers }, () => 3.1 * rng.int(2, 3));
   let y = 0;
   const pale = mixHex(style.wall, 0xffffff, 0.25);
   for (let tier = 0; tier < tiers; tier++) {
     const inset = tier % 2 === 0 ? 1.2 : 0;
-    const h = 3.1 * rng.int(2, 3);
+    const h = heights[tier]!;
     const ax0 = x0 + inset, ax1 = x1 - inset, az0 = z0 + inset, az1 = z1 - inset;
     b.part();
     b.as(Surface.plaster, () => b.box(ax0, y, az0, ax1, y + h, az1, tier % 2 === 0 ? style.wall : pale));

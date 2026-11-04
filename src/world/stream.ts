@@ -9,6 +9,8 @@ export interface World {
   lines: Group;
   /** Keeps chunks in view around the train. Chunks build in workers and appear when ready. */
   update(distance: number, ahead: number, behind: number): void;
+  /** Swaps every chunk for one built with less, or more, in it. What is there stays until its replacement is ready. */
+  setMinimal(on: boolean): void;
   /** Hides every piece of city outside the camera's view. Call after the camera has moved. */
   cull(camera: Camera): void;
   readonly drawnTriangles: number;
@@ -28,6 +30,7 @@ interface LoadedPart {
 }
 
 interface LoadedChunk {
+  minimal: boolean;
   group: Group;
   lines: Group;
   parts: LoadedPart[];
@@ -40,7 +43,7 @@ const shifted = new Box3();
 const offset = new Vector3();
 
 /** Streams the endless city past a train that stays at the origin, so precision never decays. */
-export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMaterial, seed: number): World {
+export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMaterial, seed: number, startMinimal = false): World {
   const group = new Group();
   const lines = new Group();
   const meshes = new Map<number, LoadedChunk>();
@@ -55,12 +58,13 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
   let triangles = 0;
   let drawn = 0;
   let currentDistance = 0;
+  let minimal = startMinimal;
 
   const dispatch = (): void => {
     while (idle.length && wanted.length) {
       wanted.sort((a, b) => Math.abs(a * CHUNK_LENGTH - currentDistance) - Math.abs(b * CHUNK_LENGTH - currentDistance));
       const index = wanted.shift()!;
-      idle.pop()!.postMessage({ seed, index });
+      idle.pop()!.postMessage({ seed, index, minimal });
     }
   };
 
@@ -75,9 +79,24 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
     idle.push(worker);
   }
 
+  const remove = (index: number, chunk: LoadedChunk): void => {
+    group.remove(chunk.group);
+    lines.remove(chunk.lines);
+    for (const part of chunk.parts) {
+      part.mesh.geometry.dispose();
+      part.line?.geometry.dispose();
+    }
+    triangles -= chunk.triangles;
+    meshes.delete(index);
+  };
+
   const install = (chunk: ChunkData): void => {
+    // Built for the other mode, from before a change of mind: its replacement is already on the way.
+    if (chunk.minimal !== minimal) return;
     requested.delete(chunk.index);
     if (!needed.has(chunk.index)) return;
+    const replaced = meshes.get(chunk.index);
+    if (replaced) remove(chunk.index, replaced);
     const chunkGroup = new Group();
     const chunkLines = new Group();
     const parts: LoadedPart[] = chunk.parts.map((part) => {
@@ -95,7 +114,7 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
       }
       return { mesh, line, box: new Box3(new Vector3(...part.min), new Vector3(...part.max)), triangles: part.indices.length / 3 };
     });
-    meshes.set(chunk.index, { group: chunkGroup, lines: chunkLines, parts, triangles: chunk.triangles });
+    meshes.set(chunk.index, { minimal: chunk.minimal, group: chunkGroup, lines: chunkLines, parts, triangles: chunk.triangles });
     group.add(chunkGroup);
     lines.add(chunkLines);
     triangles += chunk.triangles;
@@ -117,21 +136,13 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
       needed = new Set<number>();
       for (let index = first; index <= last; index++) {
         needed.add(index);
-        if (!meshes.has(index) && !requested.has(index)) {
+        if (meshes.get(index)?.minimal !== minimal && !requested.has(index)) {
           requested.add(index);
           wanted.push(index);
         }
       }
       for (const [index, chunk] of meshes) {
-        if (needed.has(index)) continue;
-        group.remove(chunk.group);
-        lines.remove(chunk.lines);
-        for (const part of chunk.parts) {
-          part.mesh.geometry.dispose();
-          part.line?.geometry.dispose();
-        }
-        triangles -= chunk.triangles;
-        meshes.delete(index);
+        if (!needed.has(index)) remove(index, chunk);
       }
       for (let i = wanted.length - 1; i >= 0; i--) {
         if (!needed.has(wanted[i]!)) {
@@ -148,6 +159,13 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
         chunk.lines.position.x = chunk.group.position.x;
       }
       if (pending() === 0) for (const resolve of waiters.splice(0)) resolve();
+    },
+    setMinimal(on) {
+      if (on === minimal) return;
+      minimal = on;
+      requested.clear();
+      wanted.length = 0;
+      queue.length = 0;
     },
     cull(camera) {
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

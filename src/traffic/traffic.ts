@@ -12,6 +12,8 @@ export interface Traffic {
   group: Group;
   /** Advances the road by `dt` seconds with the train at `distance`, and redraws what `camera` sees. */
   update(distance: number, time: number, dt: number, camera: Camera): void;
+  /** Minimal mode: the whole road still drives, and only one vehicle in three and one walker in four is drawn. */
+  setMinimal(on: boolean): void;
 }
 
 const AHEAD = 220;
@@ -98,6 +100,8 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
   const used = KINDS.map(() => 0);
   const kindIndex = new Map(KINDS.map((k, i) => [k, i]));
   let clock = 0;
+  let vehicleStep = 1;
+  let walkerStep = 1;
 
   const frustum = new Frustum();
   const viewProjection = new Matrix4();
@@ -122,6 +126,10 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
 
   return {
     group,
+    setMinimal(on) {
+      vehicleStep = on ? 3 : 1;
+      walkerStep = on ? 4 : 1;
+    },
     update(distance, time, dt, camera) {
       viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       frustum.setFromProjectionMatrix(viewProjection);
@@ -130,17 +138,22 @@ export function createTraffic(material: ShaderMaterial, assets: Assets, seed: nu
       const to = distance + AHEAD;
       flow.step(Math.min(dt, 0.1), clock, from, to);
       used.fill(0);
-      for (const v of flow.vehicles) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw, 0.03 + v.lift, v.pitch);
+      flow.vehicles.forEach((v, i) => {
+        if (i % vehicleStep === 0) place(v.kind, distance - v.s, v.z, (v.direction > 0 ? 0 : Math.PI) + v.yaw, 0.03 + v.lift, v.pitch);
+      });
       // The model's nose points along -x at rest; a crosser heading +z turns a quarter left.
       // Side streets meet the road at pavement height, so a crosser rises over the kerb onto them.
-      for (const c of flow.crossers) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, streetLevel(c.z) + c.lift, c.pitch);
+      flow.crossers.forEach((c, i) => {
+        if (i % vehicleStep === 0) place(c.kind, distance - c.s, c.z, c.heading > 0 ? Math.PI / 2 : -Math.PI / 2, streetLevel(c.z) + c.lift, c.pitch);
+      });
       instanced.forEach((mesh, k) => {
         mesh.count = used[k]!;
         mesh.instanceMatrix.needsUpdate = true;
       });
 
       for (const counts of walkCounts) counts.fill(0);
-      for (const walker of walkers) {
+      for (let w = 0; w < walkers.length; w += walkerStep) {
+        const walker = walkers[w]!;
         const travelled = walker.base + walker.direction * walker.speed * time;
         const s = from + (((travelled - from) % WINDOW) + WINDOW) % WINDOW;
         // Feet keep to the ground: the cycle advances with the distance covered, not with the clock.

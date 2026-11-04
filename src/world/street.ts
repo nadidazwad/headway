@@ -1,5 +1,5 @@
 import { Surface, type Batch, type Vec3 } from "../geometry";
-import type { Rng } from "../shared/rng";
+import { Rng } from "../shared/rng";
 import { city } from "../shared/palette";
 import { CHUNK_LENGTH, FAR_BACK, FAR_FRONT, KERB_FACE, MEDIAN_HALF, ROAD_HALF, SIDEWALK_HALF, SPAN, latticeIn, localX, type Cells, type Context } from "./layout";
 import { tree } from "./nature";
@@ -21,7 +21,7 @@ function between(from: number, to: number, gaps: Gaps): Array<readonly [number, 
 
 /** The stretch of main road under the viaduct, its median, kerbs and pavements. */
 /** `junctions` are the local x ranges where a side street meets the road and the median opens. */
-export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: ReadonlyArray<readonly [number, number]>): void {
+export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: ReadonlyArray<readonly [number, number]>, minimal = false): void {
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   b.part();
@@ -30,12 +30,12 @@ export function buildRoad(b: Batch, context: Context, rng: Rng, junctions: Reado
   b.as(Surface.asphalt, () => b.quad([x0, 0.02, ROAD_HALF], [x1, 0.02, ROAD_HALF], [x1, 0.02, -ROAD_HALF], [x0, 0.02, -ROAD_HALF], city.road, [0, 1, 0]));
 
   // Lane dashes, in line position so they stay continuous across chunks, worn like the tar under them.
-  b.as(Surface.asphalt, () => laneMarks(b, context, rng, junctions));
+  b.as(Surface.asphalt, () => laneMarks(b, context, rng, junctions, minimal));
   buildMedian(b, context, junctions);
-  for (const side of [1, -1]) buildPavement(b, context, side, junctions);
+  for (const side of [1, -1]) buildPavement(b, context, side, junctions, minimal);
 }
 
-function laneMarks(b: Batch, context: Context, rng: Rng, junctions: Gaps): void {
+function laneMarks(b: Batch, context: Context, rng: Rng, junctions: Gaps, minimal: boolean): void {
   const x0 = -CHUNK_LENGTH;
   const x1 = 0;
   for (const distance of latticeIn(context, 6)) {
@@ -53,7 +53,7 @@ function laneMarks(b: Batch, context: Context, rng: Rng, junctions: Gaps): void 
     for (const [a, c] of between(x0, x1, junctions)) b.quad([a, 0.03, z + 0.06], [c, 0.03, z + 0.06], [c, 0.03, z - 0.06], [a, 0.03, z - 0.06], city.roadLine, [0, 1, 0]);
   }
   // Worn patches of darker tar, because every road here has been dug up at least twice.
-  const patches = rng.int(2, 5);
+  const patches = minimal ? 0 : rng.int(2, 5);
   for (let i = 0; i < patches; i++) {
     const px = rng.range(x0 + 3, x1 - 3);
     const pz = rng.range(-12, 12);
@@ -93,7 +93,7 @@ function buildMedian(b: Batch, context: Context, junctions: ReadonlyArray<readon
   }
 }
 
-function buildPavement(b: Batch, context: Context, side: number, junctions: Gaps): void {
+function buildPavement(b: Batch, context: Context, side: number, junctions: Gaps, minimal: boolean): void {
   const inner = side * ROAD_HALF;
   const outer = side * SIDEWALK_HALF;
   const z0 = Math.min(inner, outer);
@@ -101,6 +101,13 @@ function buildPavement(b: Batch, context: Context, side: number, junctions: Gaps
   // The pavement and its kerb stop at a side street's mouth, and start again on its far corner.
   b.part();
   for (const [a, c] of between(-CHUNK_LENGTH, 0, junctions)) b.as(Surface.paving, () => b.box(a, 0, z0, c, 0.2, z1, city.sidewalk));
+  if (minimal) {
+    // One plain edge, in place of a stripe every metre.
+    b.as(Surface.concrete, () => {
+      for (const [a, c] of between(-CHUNK_LENGTH, 0, junctions)) b.box(a, 0, inner - 0.14, c, 0.21, inner + 0.14, city.kerbLight);
+    });
+    return;
+  }
   b.as(Surface.concrete, () => kerbStripes(b, context, inner, 0.21, 0, junctions));
   // Pavers and the drain slabs that are never quite level.
   for (const distance of latticeIn(context, 3)) {
@@ -115,7 +122,7 @@ const RAMP_END = ROAD_HALF + 0.9;
 const RAMP_STEPS = [ROAD_HALF - 0.9, ROAD_HALF - 0.45, ROAD_HALF, ROAD_HALF + 0.45, RAMP_END];
 
 /** A side street running away from the main road, with its own crossing and building gap. */
-export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean, rng: Rng): void {
+export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean): void {
   for (const [z0, z1] of [[RAMP_END, FAR_FRONT], [FAR_BACK, -RAMP_END]] as const) {
     b.part();
     b.as(Surface.asphalt, () => b.quad([x0, 0.21, z1], [x1, 0.21, z1], [x1, 0.21, z0], [x0, 0.21, z0], 0x85848a, [0, 1, 0]));
@@ -138,7 +145,6 @@ export function buildSideStreet(b: Batch, x0: number, x1: number, zebra: boolean
       b.box(x1, 0, near, x1 + 0.28, 0.21, far, city.kerbDark);
     });
   }
-  void rng;
   // Zebra crossing over the main road.
   if (zebra) {
     for (let z = -12.5; z < 12.5; z += 1.2) {
@@ -214,14 +220,15 @@ function sagging(a: Vec3, b: Vec3, sag: number): Vec3[] {
 }
 
 /** Street life along the pavement: trees, and concrete poles with their famous wire tangles. */
-export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, clear: (x: number, side: number) => boolean): void {
+export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, clear: (x: number, side: number) => boolean, minimal = false): void {
   const clearX = (x: number, side: number): boolean => clear(x - 1.2, side) && clear(x + 1.2, side);
   const poleStep = 36;
   for (const side of [1, -1]) {
     const z = side * (ROAD_HALF + 0.75);
     for (const distance of latticeIn(context, poleStep, side > 0 ? 8 : 26)) {
       const x = localX(context, distance);
-      if (!clearX(x, side)) continue;
+      // No poles or their cable tangles in minimal mode: nothing here is calmer without.
+      if (minimal || !clearX(x, side)) continue;
       const b = cells.at(x, z);
       b.part();
       b.bar([x, 0.2, z], [x, 9.2, z], 0.14, 0.09, 0xa9a59a, 6);
@@ -259,7 +266,8 @@ export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, c
       b.part();
       b.block(x, 8.34, lampZ - side * 1.5, 0.22, 0.09, 0.6, 0x5f6669);
     }
-    // Pavement trees.
+    // Pavement trees. Minimal mode keeps every other one, in the same places, with a lighter crown.
+    let planted = 0;
     for (const distance of latticeIn(context, 15, side > 0 ? 5 : 11)) {
       if (!rng.chance(0.55)) continue;
       const x = localX(context, distance) + rng.range(-3, 3);
@@ -267,7 +275,9 @@ export function buildStreetFurniture(cells: Cells, context: Context, rng: Rng, c
       // In the kerb band, with the poles, so the strip people walk in stays clear.
       const treeZ = side * (ROAD_HALF + 0.95);
       const h = rng.range(6.5, side > 0 ? 8.5 : 11);
-      tree(cells.at(x, treeZ), x, treeZ, h, rng);
+      const grown = new Rng(rng.int(1, 1 << 30));
+      if (minimal && planted++ % 2 === 1) continue;
+      tree(cells.at(x, treeZ), x, treeZ, h, grown, { far: minimal });
     }
   }
 }

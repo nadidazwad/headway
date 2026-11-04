@@ -46,7 +46,8 @@ for (let i = 0; i < steps; i++) {
   stills.push({ grey, dx: sx * step * i, dy: sy * step * i });
 }
 p.kill("SIGKILL");
-const B = 6;
+// BLUR=1 looks at the finest grain, for the stair-step crawl that a wider window averages away.
+const B = Number(process.env.BLUR ?? 6);
 const blurred = stills.map(({ grey }) => {
   const sum = new Float64Array((W + 1) * (H + 1));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) sum[(y + 1) * (W + 1) + x + 1] = grey[y * W + x] + sum[y * (W + 1) + x + 1] + sum[(y + 1) * (W + 1) + x] - sum[y * (W + 1) + x];
