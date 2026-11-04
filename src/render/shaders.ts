@@ -142,14 +142,41 @@ float tinSurface(vec2 uv, float px) {
   return v;
 }
 
+/**
+ * Up close a leaf's triangle stands for a bunch of small leaves: a lattice pinned to the line, one
+ * leaf to a cell, each turned its own way, with the sky between them. x is how far outside its
+ * leaf this point lies, where over 1 is outside, and y that leaf's own tone. The lattice grows
+ * solid before its gaps could come under a few pixels: further out the triangle is whole, and
+ * geometry alone makes the crown's broken edge.
+ */
+vec2 smallLeaf(vec3 p, float px, bool long_) {
+  float fade = detail(0.08, px);
+  if (fade <= 0.0) return vec2(0.0, 0.0);
+  float size = long_ ? 0.2 : 0.125;
+  vec2 q = (p.xy + p.z * vec2(0.37, 0.61)) / size;
+  vec2 cell = floor(q);
+  float h = hash12(vec2(mod(cell.x, WRAP / size), cell.y));
+  float a = h * 6.2831853;
+  vec2 f = fract(q) - 0.5 - (vec2(fract(h * 7.0), fract(h * 13.0)) - 0.5) * 0.14;
+  vec2 turned = vec2(cos(a) * f.x - sin(a) * f.y, sin(a) * f.x + cos(a) * f.y);
+  float e = length(turned * vec2(1.0, long_ ? 2.4 : 1.55)) * 2.0;
+  return vec2(e / mix(2.6, 1.05, fade), (fract(h * 23.0) - 0.5) * fade);
+}
+
+/** A loose fleck of light or dark in each cell of this size, for the depths of a crown where single leaves stop. */
+float leafFleck(vec2 q, float size) {
+  vec2 cell = floor(q / size);
+  float h = hash12(vec2(mod(cell.x, WRAP / size), cell.y));
+  vec2 f = fract(q / size) - 0.5;
+  float a = h * 6.2831853;
+  vec2 turned = vec2(cos(a) * f.x - sin(a) * f.y, sin(a) * f.x + cos(a) * f.y);
+  return (1.0 - smoothstep(0.26, 0.46, length(turned * vec2(1.0, 2.0)))) * (fract(h * 17.0) - 0.42);
+}
+
 float foliageSurface(vec3 p, float px) {
-  vec2 a = p.xy + p.z * 0.37;
-  vec2 b = p.zy - p.x * 0.29;
-  float leaves = 0.5 * (wnoise(a, 3.5) + wnoise(b + 13.0, 3.5));
-  float v = 1.0 + (leaves - 0.5) * 0.3 * detail(0.28, px);
-  float fine = 0.5 * (wnoise(a, 13.0) + wnoise(b, 13.0));
-  v += (fine - 0.5) * 0.5 * detail(0.09, px);
-  return v;
+  vec2 q = p.xy + p.z * vec2(0.37, 0.61);
+  float v = 1.0 + leafFleck(q, 0.25) * 0.42 * detail(0.25, px);
+  return v + leafFleck(q + 3.1, 0.125) * 0.34 * detail(0.125, px);
 }
 
 float barkSurface(vec2 uv, float px) {
@@ -225,7 +252,7 @@ void main() {
   #ifdef USE_INSTANCING_COLOR
     vColor *= instanceColor;
   #endif
-  vPart = colorPart.a;
+  vPart = colorPart.a > 0.999 ? 2.0 : colorPart.a;
   vUv = uv;
   vDepth = -view.z - uFocusDepth;
   gl_Position = projectionMatrix * view;
@@ -299,13 +326,17 @@ float sunlight(vec3 world, vec3 n) {
 
 void main() {
   if (uCutEnabled > 0.5 && dot(vWorld, uCutPlane.xyz) > uCutPlane.w) discard;
+  bool leafy = vSurface > 13.5;
+  vec2 smallest = leafy ? smallLeaf(vLine, max(length(fwidth(vLine)), 1e-4), vSurface > 14.5) : vec2(0.0);
+  if (smallest.x > 1.0) discard;
   vec3 n = normalize(vNormalWorld);
   float light = 0.5 + 0.5 * dot(n, SUN);
   float tone = 0.5 + 0.6 * light;
   vec3 tint = mix(vec3(0.87, 0.91, 1.02), vec3(1.01, 1.0, 0.98), smoothstep(0.25, 0.95, light));
 
   vec3 base = vColor;
-  if (vUv.x > 0.0 || vUv.y > 0.0) {
+  bool printed = vUv.x > 0.0 || vUv.y > 0.0;
+  if (printed) {
     vec4 ink = texture(uAtlas, vUv);
     base = mix(base, ink.rgb, ink.a);
   }
@@ -320,14 +351,14 @@ void main() {
     // The city is one grey drawing: authored colour decides only how light each part is.
     float value = dot(base, vec3(0.3, 0.59, 0.11));
     // Print keeps its blacks, so a sign still reads; everything else is lifted towards the paper.
-    bool printed = vUv.x > 0.0 || vUv.y > 0.0;
     bool figure = vSurface > 10.5 && vSurface < 11.5;
-    value = printed ? 0.2 + 0.8 * value : figure ? 0.14 + 0.86 * pow(value, 0.85) : 0.42 + 0.58 * pow(value, 0.7);
+    // So do leaves their shade: a crown needs its darks to read as depth, where a wall does not.
+    value = printed ? 0.2 + 0.8 * value : figure ? 0.14 + 0.86 * pow(value, 0.85) : leafy || vSurface < 1.5 && vSurface > 0.5 ? 0.2 + 0.8 * pow(value, 0.8) : 0.42 + 0.58 * pow(value, 0.7);
     #ifndef NO_WEATHER
-    value *= weathering(vSurface, vLine, n);
+    value *= leafy ? 1.0 + smallest.y * 0.3 : weathering(vSurface, vLine, n);
     #endif
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
-    float flatten = vSurface > 0.5 && vSurface < 1.5 ? 0.12 : 0.36;
+    float flatten = leafy || (vSurface > 0.5 && vSurface < 1.5) ? 0.12 : 0.36;
     lit = PAPER * value * mix(tone, 1.0, flatten) * streetShade * mix(0.84, 1.0, shade);
   } else {
     bool lamplit = vSurface > 12.5 && vSurface < 13.5;
@@ -467,8 +498,9 @@ void main() {
   float normalLine = smoothstep(0.42, 1.05, length(l.xy - r.xy) + length(d.xy - u.xy));
   float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * uFineInk;
   float line = max(depthLine * 0.9, max(normalLine * 0.75, partLine));
-  // Inside a crown of leaves the ink all but disappears; it keeps its full weight round the outside.
-  if (min(c.w, min(l.w, min(r.w, min(d.w, u.w)))) > 0.995) line *= 0.22;
+  // Leaves are drawn by their tone: inside a crown the ink all but disappears, and round each leaf's own edge it stays light.
+  // A leaf's mark is 2: filtered against the sky it still reads over 1, which no other part ever does.
+  if (max(c.w, max(l.w, max(r.w, max(d.w, u.w)))) > 1.02) line *= min(c.w, min(l.w, min(r.w, min(d.w, u.w)))) > 1.9 ? 0.06 : 0.16;
 
   float coverage = color.a;
   vec3 solid = coverage > 0.001 ? color.rgb / coverage : vec3(0.0);

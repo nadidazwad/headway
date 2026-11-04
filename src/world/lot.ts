@@ -128,7 +128,7 @@ export function emptyLot(b: Batch, assets: Assets, plot: Plot, rng: Rng): void {
     }
     b.part();
     b.ellipsoid(rng.range(x0 + 4, x1 - 4), 0.13, rng.range(z0 + 3, z1 - 3), 0.11, 0.11, 0.11, 0xf4f1e7, 4, 6);
-    tree(b, x0 + 1.4, backZ - side * 1.4, rng.range(7, 10), rng);
+    tree(b, x0 + 1.4, backZ - side * 1.4, rng.range(7, 10), rng, { far: plot.lod > 0 });
   } else {
     // Weeds, a heap of builder's rubble, a tree or two, a palm.
     for (let i = 0; i < 14; i++) {
@@ -144,8 +144,8 @@ export function emptyLot(b: Batch, assets: Assets, plot: Plot, rng: Rng): void {
     for (let i = 0; i < trees; i++) {
       const tx = rng.range(x0 + 2.5, x1 - 2.5);
       const tz = rng.range(z0 + 2.5, z1 - 2.5);
-      if (rng.chance(0.4)) palm(b, tx, tz, rng.range(7, 11), rng);
-      else tree(b, tx, tz, rng.range(7, 12), rng);
+      if (rng.chance(0.4)) palm(b, tx, tz, rng.range(7, 11), rng, plot.lod > 0);
+      else tree(b, tx, tz, rng.range(7, 12), rng, { far: plot.lod > 0 });
     }
     // Posters pasted on the wall facing the road.
     if (kind === "plaster") {

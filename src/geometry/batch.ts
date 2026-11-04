@@ -42,6 +42,10 @@ export const Surface = {
   fluted: 12,
   /** Walls inside the train: lit by the coach's own lamps, so they take no blue from facing away from the sun. */
   interior: 13,
+  /** A bunch of small leaves, one triangle: up close the shader breaks it into them. */
+  leaf: 14,
+  /** The same, for long narrow leaves such as a mango's or a palm's. */
+  blade: 15,
 } as const;
 export type SurfaceKind = (typeof Surface)[keyof typeof Surface];
 
@@ -63,6 +67,7 @@ const cameraDirection = (azimuth: number, elevation: number): Vec3 => {
   return [-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
 };
 const CORNERS: readonly Vec3[] = [cameraDirection(4, 12), cameraDirection(4, 50), cameraDirection(66, 12), cameraDirection(66, 50)];
+const USUAL_VIEW = cameraDirection(35, 30);
 
 /**
  * The camera only ever looks from above, from the -X/+Z quadrant, so faces that can never
@@ -309,6 +314,26 @@ export class Batch {
     if (!this.cull) return false;
     const [wx, wy, wz] = this.worldNormal(nx, ny, nz);
     return !canBeSeen(wx, wy, wz);
+  }
+
+  /**
+   * A leaf: one triangle from a foot edge `a`-`c` to a `tip`. It is lit by `normal`, the crown's
+   * shape rather than its own flat face, and always wound towards the camera, since it is too thin
+   * to have a back worth drawing.
+   */
+  leaf(a: Vec3, c: Vec3, tip: Vec3, normal: Vec3, color: number): this {
+    this.growVertices(3);
+    this.growIndices(3);
+    const [nx, ny, nz] = normal;
+    const i0 = this.vertex(a[0], a[1], a[2], nx, ny, nz, color);
+    const i1 = this.vertex(c[0], c[1], c[2], nx, ny, nz, color);
+    const i2 = this.vertex(tip[0], tip[1], tip[2], nx, ny, nz, color);
+    const ux = c[0] - a[0], uy = c[1] - a[1], uz = c[2] - a[2];
+    const vx = tip[0] - a[0], vy = tip[1] - a[1], vz = tip[2] - a[2];
+    const facing = (uy * vz - uz * vy) * USUAL_VIEW[0] + (uz * vx - ux * vz) * USUAL_VIEW[1] + (ux * vy - uy * vx) * USUAL_VIEW[2];
+    if (facing > 0) this.pushIndices(i0, i1, i2);
+    else this.pushIndices(i0, i2, i1);
+    return this;
   }
 
   /** A flat quad, wound to face the side its corners imply unless `facing` overrides it. */
