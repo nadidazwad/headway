@@ -220,14 +220,53 @@ function roofJoints(b: Batch, x0: number, z0: number, x1: number, z1: number, y:
   b.part();
 }
 
+export interface Tank {
+  /** Centre, measured from the corner of the slab it stands on. */
+  x: number;
+  z: number;
+  r: number;
+  /** Half the width of its square stand: always wider than the tank. */
+  stand: number;
+}
+
+/**
+ * Water tanks in a row along a slab's x: a row running into the view would look like tanks standing
+ * in one another even with clear space between them. Every stand lies on the slab and no two touch;
+ * whatever will not fit is left off, and a slab too small for any tank has none. A roof's tanks are
+ * bought together, so they are near enough the same size.
+ */
+export function placeTanks(width: number, depth: number, rng: Rng): Tank[] {
+  const EDGE = 0.1;
+  const GAP = 0.22;
+  const STAND = 1.12;
+  const largest = Math.min(0.75, (depth / 2 - EDGE) / STAND, (width / 2 - EDGE) / STAND);
+  if (largest < 0.34) return [];
+  const size = Math.min(largest, rng.range(0.55, 0.75));
+  const radii = Array.from({ length: rng.int(1, 3) }, () => size * rng.range(0.92, 1));
+  const rowLength = (): number => radii.reduce((sum, r) => sum + r * STAND * 2, GAP * (radii.length - 1));
+  while (radii.length > 1 && rowLength() > width - EDGE * 2) radii.pop();
+  let cursor = (width - rowLength()) / 2;
+  return radii.map((r) => {
+    const stand = r * STAND;
+    const x = cursor + stand;
+    cursor += stand * 2 + GAP;
+    return { x, z: depth / 2, r, stand };
+  });
+}
+
 /** Chillers with round fans, tilted skylights, a ladder up the stair-head, and the pipes that feed it all. */
 function roofKit(b: Batch, x0: number, z0: number, x1: number, z1: number, y: number, sx: number, sz: number, stairW: number, stairD: number, rng: Rng): void {
   const width = x1 - x0;
   const depth = z1 - z0;
-  if (rng.chance(0.62)) {
-    // Twin chillers, each a slatted box with a fan on top.
-    const cx = x0 + width * rng.range(0.58, 0.72);
-    const cz = z0 + depth * rng.range(0.45, 0.68);
+  const clearOfStairs = (ax: number, az: number, cx: number, cz: number): boolean => cx < sx - 0.2 || ax > sx + stairW + 0.2 || cz < sz - 0.2 || az > sz + stairD + 0.2;
+  const onRoof = (ax: number, az: number, cx: number, cz: number): boolean => ax > x0 + 0.4 && cx < x1 - 0.4 && az > z0 + 0.4 && cz < z1 - 0.4;
+  const fits = (ax: number, az: number, cx: number, cz: number): boolean => onRoof(ax, az, cx, cz) && clearOfStairs(ax, az, cx, cz);
+  // Twin chillers, each a slatted box with a fan on top.
+  const chillerX = x0 + width * rng.range(0.58, 0.72);
+  const chillerZ = z0 + depth * rng.range(0.45, 0.68);
+  if (rng.chance(0.62) && fits(chillerX, chillerZ, chillerX + 3.35, chillerZ + 1.2)) {
+    const cx = chillerX;
+    const cz = chillerZ;
     for (const offset of [0, 1.75]) {
       b.part();
       b.box(cx + offset, y, cz, cx + offset + 1.6, y + 0.82, cz + 1.2, 0xdcdad0);
@@ -241,10 +280,12 @@ function roofKit(b: Batch, x0: number, z0: number, x1: number, z1: number, y: nu
       b.cylinder(cx + offset + 0.8, y + 0.89, cz + 0.6, 0.28, 0.28, 0.012, 0x50524f, 14);
     }
   }
-  if (rng.chance(0.42)) {
-    // Skylights: three tilted panels in a row, as on the roofs in the film.
-    const px = x0 + width * rng.range(0.12, 0.3);
-    const pz = z1 - depth * rng.range(0.26, 0.38);
+  // Skylights: three tilted panels in a row, as on the roofs in the film.
+  const skylightX = x0 + width * rng.range(0.12, 0.3);
+  const skylightZ = z1 - depth * rng.range(0.26, 0.38);
+  if (rng.chance(0.42) && fits(skylightX, skylightZ, skylightX + 4.5, skylightZ + 0.9)) {
+    const px = skylightX;
+    const pz = skylightZ;
     for (let i = 0; i < 3; i++) {
       const u = px + i * 1.55;
       b.part();
@@ -303,20 +344,19 @@ function drawRoof(b: Batch, x0: number, z0: number, x1: number, z1: number, y: n
     b.part();
     b.box(sx + 0.3, y + 0.02, sz + stairD, sx + 1.25, y + 2.05, sz + stairD + 0.05, 0x7b5d43);
   }
-  // Water tanks: black or blue polythene on a low stand.
-  const tanks = rng.int(1, 3);
+  // Water tanks: black or blue polythene on a low stand, on the stair-head's roof.
   const tankBlue = rng.chance(0.3);
-  for (let i = 0; i < tanks; i++) {
-    const r = rng.range(0.55, 0.75);
-    const tx = sx + stairW * 0.2 + i * (r * 2.3);
-    const tz = sz + stairD * 0.5;
+  const standTop = y + 2.72 + (lod === 0 ? 0.14 : 0);
+  for (const { x, z, r, stand } of placeTanks(stairW, stairD, rng)) {
+    const tx = sx + x;
+    const tz = sz + z;
     if (lod === 0) {
       b.part();
-      b.box(tx - r * 0.8, y + 2.72, tz - r * 0.8, tx + r * 0.8, y + 2.86, tz + r * 0.8, 0x8f8a7e);
+      b.box(tx - stand, y + 2.72, tz - stand, tx + stand, standTop, tz + stand, 0x8f8a7e);
     }
     b.part();
     const color = tankBlue ? city.tankBlue : city.tankBlack;
-    const base = y + 2.86;
+    const base = standTop;
     const profile: Array<[number, number]> = [[r * 0.92, base], [r, base + 0.1], [r, base + 1.15], [r * 0.82, base + 1.38], [r * 0.3, base + 1.5], [r * 0.3, base + 1.6], [0.01, base + 1.6]];
     b.lathe(tx, tz, profile, color, lod === 0 ? 12 : 8);
   }
