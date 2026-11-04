@@ -17,13 +17,14 @@ export interface Thought {
 export type Theme = "women" | "crush" | "seat" | "sleep" | "late" | "first";
 
 export const THEME_TITLES: Record<Theme | "cab", { bn: string; en: string }> = {
-  cab: { bn: "চালকের কেবিন", en: "OPERATOR'S CABIN" },
-  women: { bn: "মহিলা কোচ", en: "THE WOMEN'S COACH" },
-  crush: { bn: "ভিড়", en: "THE CRUSH" },
-  seat: { bn: "সিট", en: "THE SEAT" },
-  sleep: { bn: "ঘুম ঘুম", en: "HALF ASLEEP" },
-  late: { bn: "লেট", en: "RUNNING LATE" },
-  first: { bn: "প্রথমবার", en: "FIRST RIDE" },
+  cab: { bn: "একমাত্র নিশ্চিত সিট", en: "THE ONE GUARANTEED SEAT" },
+  // Women only, and it says so nowhere on screen: the name is about the elbows, not who is missing.
+  women: { bn: "কনুইমুক্ত এলাকা", en: "ELBOW-FREE ZONE" },
+  crush: { bn: "তিল ধারণের ঠাঁই নেই", en: "NO ROOM FOR A SESAME SEED" },
+  seat: { bn: "সিট দখল আন্দোলন", en: "THE SEAT-GRABBING MOVEMENT" },
+  sleep: { bn: "ঘুম মন্ত্রণালয়", en: "MINISTRY OF SLEEP" },
+  late: { bn: "এই তো, চলে আসছি", en: "ALMOST THERE, I SWEAR" },
+  first: { bn: "পুরাই সিঙ্গাপুর", en: "BASICALLY SINGAPORE" },
 };
 
 type Line = readonly [bn: string, en: string, mood: Mood, fits?: Fits];

@@ -44,8 +44,6 @@ interface CarOptions {
   /** Which end carries a driving cab, if any. */
   cab: "none" | "front" | "rear";
   pantograph: boolean;
-  /** The first coach of a Line 6 set is reserved for women. */
-  women: boolean;
 }
 
 const SKIN_OUT = 0.006;
@@ -192,7 +190,7 @@ function underframe(b: Batch, x0: number, x1: number): void {
 }
 
 /** The near skin: smooth stainless panels round every window and door, with real openings. */
-function bodySide(b: Batch, bodyFrom: number, bodyTo: number, women: boolean, ends: PlainEnds): void {
+function bodySide(b: Batch, bodyFrom: number, bodyTo: number, ends: PlainEnds): void {
   const z = HALF_WIDTH;
   const x0 = flatFrom(bodyFrom, ends);
   const x1 = flatTo(bodyTo, ends);
@@ -258,7 +256,7 @@ function bodySide(b: Batch, bodyFrom: number, bodyTo: number, women: boolean, en
   }
   for (const center of DOOR_CENTERS) {
     if (center + DOOR_HALF < x0 || center - DOOR_HALF > x1) continue;
-    doorway(b, center, women);
+    doorway(b, center);
   }
   if (ends.from) endPost(b, x0, -1);
   if (ends.to) endPost(b, x1, 1);
@@ -278,7 +276,7 @@ function endPost(b: Batch, x: number, outward: number): void {
 }
 
 /** A doorway from outside: stainless leaves with tall round-cornered windows, between red posts. */
-function doorway(b: Batch, center: number, women: boolean): void {
+function doorway(b: Batch, center: number): void {
   const z = HALF_WIDTH;
   const top = FLOOR_Y + DOOR_HEIGHT;
   for (const side of [-1, 1]) {
@@ -307,12 +305,6 @@ function doorway(b: Batch, center: number, women: boolean): void {
   b.cylinder(center + DOOR_HALF + 0.17, top - 0.06, z + 0.002, 0.04, 0.04, 0.01, 0xd8a33a, 8);
   b.part();
   b.box(center - DOOR_HALF - 0.05, FLOOR_Y - 0.06, z - 0.02, center + DOOR_HALF + 0.05, FLOOR_Y, z + 0.05, 0x5c6063);
-  if (women) {
-    // Stations mark this coach with a red sign; here it stands beside each door.
-    const u0 = center + DOOR_HALF + 0.14;
-    b.part();
-    printed(b, "women", [u0, BELT_Y + 0.5, z + 0.008], [u0 + 0.44, BELT_Y + 0.5, z + 0.008], [u0 + 0.44, BELT_Y + 0.61, z + 0.008], [u0, BELT_Y + 0.61, z + 0.008], [0, 0, 1]);
-  }
 }
 
 const roofProfile = (u: number): number => SHOULDER_Y + (ROOF_Y - SHOULDER_Y) * (1 - Math.abs(u) ** 2.6);
@@ -1163,7 +1155,7 @@ function cabDetail(b: Batch, tip: number, d: number): void {
 }
 
 /** Builds a car's three levels of drawing. The local origin is the middle of the car at rail height. */
-export function buildCar({ cab, pantograph, women }: CarOptions): CarMeshes {
+export function buildCar({ cab, pantograph }: CarOptions): CarMeshes {
   const half = CAR_LENGTH / 2;
   const noseAt = cab === "front" ? -NOSE_AT : cab === "rear" ? NOSE_AT : null;
   const direction = cab === "rear" ? 1 : -1;
@@ -1203,7 +1195,7 @@ export function buildCar({ cab, pantograph, women }: CarOptions): CarMeshes {
   }
 
   const shell = new Batch(1 << 15);
-  bodySide(shell, bodyFrom, bodyTo, women, ends);
+  bodySide(shell, bodyFrom, bodyTo, ends);
   const flat0 = flatFrom(bodyFrom, ends);
   const flat1 = flatTo(bodyTo, ends);
   shell.part();

@@ -10,7 +10,7 @@ An endless browser experience: a six-car Line 6 train crossing a procedurally ge
 - Empty plots are walled (brick or plaster) and gated; playing fields get a low wall and a grille.
 - Prefer downloaded assets with a licence that allows it, then adapt them. Credit them in `public/credits.txt`.
 - Thoughts only ever happen inside the metro, right now: the smell of the man beside you, a seat about to free up, forgotten headphones, a nap. Everyday Dhaka talk, never musings on life. Women think women's lines and men men's, and a line must suit how they are riding (seated, standing, on a phone).
-- The operator's cabin opens apart from the women's coach.
+- The operator's cabin opens apart from the first coach. The first coach is women only, and nothing on screen says so: coach names are jokes in everyday Dhaka talk (`THEME_TITLES`), never who rides there.
 - Commit locally with `git -c user.name=outversal -c user.email=nadidazwad@gmail.com commit`, so Vercel can tie commits to the GitHub account. Push only when the owner asks: `main` on `nadidazwad/headway` deploys to Vercel.
 
 ## Map

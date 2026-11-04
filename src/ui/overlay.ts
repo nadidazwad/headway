@@ -149,7 +149,7 @@ export function createOverlay(root: HTMLElement, onBubbleHover: (id: string) => 
         void callout.root.offsetWidth;
         callout.root.style.animation = "";
         callout.card.innerHTML = `
-          <div class="callout-kicker">CLICK TO LOOK IN</div>
+          <div class="callout-kicker">CLICK TO STEP IN</div>
           <div class="callout-title">${title.en}</div>
           <div class="callout-bangla" lang="bn">${title.bn}</div>`;
       }

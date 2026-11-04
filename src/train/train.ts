@@ -41,10 +41,10 @@ export function createTrain(pipeline: Pipeline, trackZ = TRACK_Z): Train {
   const group = new Group();
   group.position.set(0, RAIL_Y, trackZ);
   const pairs = {
-    front: buildCar({ cab: "front", pantograph: false, women: true }),
-    rear: buildCar({ cab: "rear", pantograph: false, women: false }),
-    plain: buildCar({ cab: "none", pantograph: false, women: false }),
-    pantograph: buildCar({ cab: "none", pantograph: true, women: false }),
+    front: buildCar({ cab: "front", pantograph: false }),
+    rear: buildCar({ cab: "rear", pantograph: false }),
+    plain: buildCar({ cab: "none", pantograph: false }),
+    pantograph: buildCar({ cab: "none", pantograph: true }),
   };
   const geometries = Object.fromEntries(
     Object.entries(pairs).map(([key, value]) => [key, [toBufferGeometry(value.fixed), toBufferGeometry(value.shell)]]),
