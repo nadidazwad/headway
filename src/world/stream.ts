@@ -105,6 +105,9 @@ export function createWorld(material: ShaderMaterial, lineMaterial: ShaderMateri
       const mesh = new Mesh(geometry, material);
       // Culling happens against tight boxes in cull(), not three's bounding spheres.
       mesh.frustumCulled = false;
+      // The camera only ever looks in from the near side, so drawing near patches first lets the depth
+      // test throw away the city hidden behind them before it is shaded.
+      mesh.renderOrder = -Math.round((part.min[2] + part.max[2]) / 2);
       chunkGroup.add(mesh);
       const lineGeometry = toLineGeometry(geometry, part);
       const line = lineGeometry ? new Mesh(lineGeometry, lineMaterial) : null;

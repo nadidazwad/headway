@@ -1,17 +1,25 @@
 import { Group, Mesh, Vector3, type BufferGeometry, type ShaderMaterial } from "three";
 import type { Assets, PersonPose } from "../assets";
-import { Batch } from "../geometry";
+import { Batch, type Stampable } from "../geometry";
 import { toBufferGeometry } from "../render";
 import { Rng, hashSeed } from "../shared/rng";
 import type { Passenger } from "../thoughts";
+import { bodyOf, headOf, type Head } from "./head";
 import { CAB_DEPTH, CAR_LENGTH } from "./layout";
 import type { TrainCar } from "./train";
 
 export interface Riders {
   /** The light crew for looking in through the windows, or the detailed, moving one for an open coach. */
   show(detailed: boolean): void;
-  /** Moves the detailed crew: the sway of the standing, the walkers in the aisle. */
+  /** Builds the detailed crew ahead of the click that needs it, so opening a coach never hitches. */
+  warm(): void;
+  /** Moves the detailed crew: the sway of the standing, the walkers in the aisle, every head. */
   update(time: number, dt: number): void;
+  /**
+   * Whose thought is being read. They look at whoever it is about, who may feel it and look back;
+   * with nobody in mind they glance up, as people do when a thought arrives.
+   */
+  attend(passenger: Passenger | null): void;
   /**
    * The person a world-space ray passes through, nearest first. `passenger` is null for someone
    * with nothing to say, such as a walker; `hit` says whether anyone was there at all.
@@ -20,17 +28,44 @@ export interface Riders {
 }
 
 const STANDING: ReadonlySet<PersonPose> = new Set(["stand", "look", "phone", "music", "bag", "strap"]);
+const ON_PHONE: ReadonlySet<PersonPose> = new Set(["phone", "sitphone"]);
 const PICK_RADIUS = 0.32;
+/** As far as a neck turns before the shoulders have to follow. */
+const NECK = 1.15;
 
-interface Standing {
-  object: Mesh;
+interface Figure {
   person: Passenger;
+  /** Where the body stands; the head rides in it. Null for the seated and still, who share one mesh. */
+  holder: Group;
+  /** The meshes that turn with this figure: its head, and its body unless that is seated and still. */
+  parts: Mesh[];
+  head: Head | null;
+  standing: boolean;
   phase: number;
-  /** Weight shifts and glances: where the body is heading and how far it has got. */
+  /** The head now, where it is heading, and how briskly. */
+  yaw: number;
+  pitch: number;
+  roll: number;
+  goalYaw: number;
+  goalPitch: number;
+  goalRoll: number;
+  brisk: number;
+  drawn: [number, number, number];
+  /** Seconds until this head next finds something of its own to do. */
+  idle: number;
+  /** Someone to look at, from a moment after it begins until it ends. */
+  watch: { who: { x: number; z: number; low: boolean }; from: number; until: number } | null;
+  /** Whether this passenger bothers to look up at whoever is walking past. */
+  curious: boolean;
+  /** A sleeper's sideways lean: which way, in its own frame, and the droop it is part-way through. */
+  lean: number;
+  droop: number;
+  /** Weight shifts of the standing: where the body is heading and how far it has got. */
   goalX: number;
+  goalZ: number;
   goalTurn: number;
   turn: number;
-  next: number;
+  shift: number;
 }
 
 interface Walker {
@@ -69,40 +104,100 @@ function rayToUpright(origin: Vector3, direction: Vector3, base: Vector3, height
   return { distance: Math.hypot(px, py, pz), along: t };
 }
 
-/** @param walkers whether anyone paces the aisle: a coach has one, a driving cab does not */
-export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, material: ShaderMaterial, seed: number, hasWalkers = true): Riders {
-  const stampOne = (draw: (b: Batch) => void): BufferGeometry => {
+const wrap = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
+const clamp = (value: number, limit: number): number => Math.max(-limit, Math.min(limit, value));
+
+/** @param hasWalkers whether anyone paces the aisle: a coach has one, a driving cab does not */
+export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, { solid: material, moving }: { solid: ShaderMaterial; moving: ShaderMaterial }, seed: number, hasWalkers = true): Riders {
+  const stampOne = (stamp: Stampable): BufferGeometry => {
     const b = new Batch(1 << 11);
     b.cull = false;
-    draw(b);
+    b.stamp(stamp);
     return toBufferGeometry(b.finish());
+  };
+  const meshOf = (geometry: BufferGeometry): Mesh => {
+    const mesh = new Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    return mesh;
   };
 
   // Seen from outside: everyone in one mesh.
   const lo = (() => {
     const batch = new Batch(1 << 13);
     for (const person of crew) batch.at(person.x, 0, person.z, () => batch.stamp(assets.person(person.avatar, person.pose, "far")), person.facing);
-    const mesh = new Mesh(toBufferGeometry(batch.finish()), material);
-    mesh.frustumCulled = false;
+    const mesh = meshOf(toBufferGeometry(batch.finish()));
     car.riders.add(mesh);
     return mesh;
   })();
 
   let detailed: Group | null = null;
-  const standing: Standing[] = [];
+  const figures: Figure[] = [];
+  const byId = new Map<string, Figure>();
   const walkers: Walker[] = [];
   const rng = new Rng(hashSeed(seed, car.index, 313));
+  let attending: Figure | null = null;
+  let clock = 0;
 
   const build = (): Group => {
     const group = new Group();
+    group.visible = false;
+    // The seated and awake never move below the neck: their bodies go into one mesh.
+    const still = new Batch(1 << 14);
+    still.cull = false;
+    let anyStill = false;
     for (const person of crew) {
-      const object = new Mesh(stampOne((b) => b.stamp(assets.person(person.avatar, person.pose, "hi"))), material);
-      object.frustumCulled = false;
-      object.position.set(person.x, 0, person.z);
-      object.rotation.y = person.facing;
-      group.add(object);
-      if (STANDING.has(person.pose)) standing.push({ object, person, phase: rng.range(0, 10), goalX: person.x, goalTurn: 0, turn: 0, next: rng.range(1, 5) });
+      const whole = assets.person(person.avatar, person.pose, "hi");
+      const head = headOf(whole);
+      const body = (head && bodyOf(whole)) || whole;
+      const standing = STANDING.has(person.pose);
+      const holder = new Group();
+      holder.position.set(person.x, 0, person.z);
+      holder.rotation.y = person.facing;
+      group.add(holder);
+      const parts: Mesh[] = [];
+      if (standing || person.asleep) parts.push(meshOf(stampOne(body)));
+      else {
+        still.at(person.x, 0, person.z, () => still.stamp(body), person.facing);
+        anyStill = true;
+      }
+      if (head) parts.push(meshOf(head.geometry));
+      holder.add(...parts);
+
+      // A sleeper sinks towards whoever is on the next seat, and towards the one minding it most of all.
+      const beside = crew
+        .filter((other) => other !== person && !STANDING.has(other.pose) && Math.sign(other.z) === Math.sign(person.z) && Math.abs(other.x - person.x) < 0.6)
+        .sort((a, b) => Number(b.thought?.about === person.id) - Number(a.thought?.about === person.id))[0];
+      const towards = beside ? Math.sign(beside.x - person.x) * Math.cos(person.facing) : rng.chance(0.5) ? 1 : -1;
+      const figure: Figure = {
+        person,
+        holder,
+        parts,
+        head,
+        standing,
+        phase: rng.range(0, 10),
+        yaw: 0,
+        pitch: 0,
+        roll: 0,
+        goalYaw: 0,
+        goalPitch: 0,
+        goalRoll: 0,
+        brisk: 4,
+        drawn: [0, 0, 0],
+        idle: rng.range(0.5, 5),
+        watch: null,
+        curious: rng.chance(0.5),
+        lean: person.asleep ? (towards >= 0 ? 1 : -1) * (beside ? 1 : 0.5) : 0,
+        droop: rng.range(0, 1),
+        goalX: person.x,
+        goalZ: person.z,
+        goalTurn: 0,
+        turn: 0,
+        shift: rng.range(1, 5),
+      };
+      figures.push(figure);
+      byId.set(person.id, figure);
     }
+    if (anyStill) group.add(meshOf(toBufferGeometry(still.finish())));
 
     // One or two people walking the aisle, between whoever stands in it.
     const aisle = rng.range(-0.15, 0.25);
@@ -118,20 +213,73 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
       if (to - from > 3.6) stretches.push([from, to]);
     }
     const count = hasWalkers ? Math.min(stretches.length, rng.int(1, 2)) : 0;
-    const cast = assets.avatars.map((_, i) => i);
+    const cast = assets.avatars.map((_, i) => i).filter((i) => car.theme !== "women" || assets.avatars[i]!.female);
     for (const [from, to] of rng.shuffled(stretches).slice(0, count)) {
       const avatar = rng.pick(cast);
-      const frames = Array.from({ length: assets.walkFrames }, (_, f) => stampOne((b) => b.stamp(assets.walkFrame(avatar, f))));
-      const still = stampOne((b) => b.stamp(assets.person(avatar, "stand", "lo")));
-      const object = new Mesh(frames[0]!, material);
-      object.frustumCulled = false;
+      const frames = Array.from({ length: assets.walkFrames }, (_, f) => stampOne(assets.walkFrame(avatar, f)));
+      const stillFrame = stampOne(assets.person(avatar, "stand", "lo"));
+      const object = meshOf(frames[0]!);
+      object.material = moving;
       group.add(object);
       const x = rng.range(from, to);
       const heading = rng.chance(0.5) ? 1 : -1;
-      walkers.push({ object, frames, still, stride: assets.avatars[avatar]!.walkStride, z: aisle, x, from, to, speed: rng.range(0.75, 1.05), heading, facing: (heading * Math.PI) / 2, pause: 0, turnAfter: 1.4, walked: rng.range(0, 3) });
+      walkers.push({ object, frames, still: stillFrame, stride: assets.avatars[avatar]!.walkStride, z: aisle, x, from, to, speed: rng.range(0.75, 1.05), heading, facing: (heading * Math.PI) / 2, pause: 0, turnAfter: 1.4, walked: rng.range(0, 3) });
     }
     car.riders.add(group);
     return group;
+  };
+
+  /** Turns a head, and the shoulders too where a neck alone would not get there, towards a point in the coach. */
+  const lookAt = (figure: Figure, x: number, z: number, low: boolean): void => {
+    const { person } = figure;
+    const wanted = wrap(Math.atan2(x - figure.holder.position.x, z - figure.holder.position.z) - person.facing);
+    if (figure.standing && person.pose !== "strap") figure.goalTurn = clamp(wanted * 0.45, 0.8);
+    figure.goalYaw = clamp(wanted - (figure.standing ? figure.goalTurn : 0), NECK);
+    // Down at someone seated from standing, up at someone standing from a seat.
+    figure.goalPitch = figure.standing === !low ? 0 : figure.standing ? 0.3 : -0.26;
+    figure.goalRoll = 0;
+    figure.brisk = 5;
+  };
+
+  /** What a head does left to itself: sleepers sink and start awake, phones hold the eye, the rest look about. */
+  const idle = (figure: Figure, dt: number): void => {
+    const { person } = figure;
+    if (person.asleep) {
+      // Down by degrees, then up with a start, then down again.
+      figure.droop += dt / (figure.droop < 1 ? 7 + (figure.phase % 4) : 0.9);
+      if (figure.droop > 2) figure.droop = 0;
+      const sunk = figure.droop < 1 ? figure.droop : 0;
+      figure.goalPitch = 0.14 + 0.36 * sunk;
+      figure.goalRoll = -figure.lean * (0.06 + 0.2 * sunk);
+      figure.goalYaw = figure.lean * 0.12 * sunk;
+      figure.brisk = figure.droop < 1 ? 1.2 : 8;
+      return;
+    }
+    figure.idle -= dt;
+    if (figure.idle > 0) return;
+    figure.brisk = 3.5;
+    figure.goalRoll = 0;
+    if (ON_PHONE.has(person.pose)) {
+      // Mostly the screen; now and then up, to see which station this is.
+      const up = rng.chance(0.3);
+      figure.goalYaw = up ? rng.range(-0.7, 0.7) : rng.range(-0.06, 0.06);
+      figure.goalPitch = up ? -0.3 : 0;
+      figure.idle = up ? rng.range(1.2, 2.2) : rng.range(4, 10);
+      return;
+    }
+    const roll = rng.next();
+    if (roll < 0.45) {
+      figure.goalYaw = rng.range(-0.12, 0.12);
+      figure.goalPitch = 0;
+    } else if (roll < 0.85) {
+      figure.goalYaw = (rng.chance(0.5) ? 1 : -1) * rng.range(0.3, 0.85);
+      figure.goalPitch = rng.range(-0.12, 0.08);
+    } else {
+      figure.goalYaw = rng.range(-0.2, 0.2);
+      figure.goalPitch = 0.26;
+    }
+    if (figure.standing && person.pose !== "strap") figure.goalTurn = rng.range(-0.45, 0.45);
+    figure.idle = rng.range(2.2, 6.5);
   };
 
   const base = new Vector3();
@@ -142,25 +290,36 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
       lo.visible = !on;
       if (detailed) detailed.visible = on;
     },
+    warm() {
+      detailed ??= build();
+    },
+    attend(passenger) {
+      const figure = passenger ? (byId.get(passenger.id) ?? null) : null;
+      if (figure === attending) return;
+      if (attending) {
+        attending.watch = null;
+        attending.idle = 0.4;
+      }
+      attending = figure;
+      if (!figure) return;
+      const subject = passenger?.thought?.about ? byId.get(passenger.thought.about) : undefined;
+      if (!subject) {
+        // Nobody in mind: the eyes go up and away for a moment, as they do when a thought lands.
+        figure.goalPitch = -0.14;
+        figure.goalYaw = clamp(figure.goalYaw + (rng.chance(0.5) ? 0.3 : -0.3), 0.6);
+        figure.brisk = 4;
+        figure.idle = 2.2;
+        return;
+      }
+      figure.watch = { who: { x: subject.person.x, z: subject.person.z, low: !subject.standing }, from: clock + 0.15, until: Infinity };
+      // Being looked at is felt. Not by the sleeping, nor by anyone lost in a phone.
+      if (!subject.person.asleep && !ON_PHONE.has(subject.person.pose) && rng.chance(0.75)) {
+        subject.watch = { who: { x: figure.person.x, z: figure.person.z, low: !figure.standing }, from: clock + rng.range(1.1, 2), until: clock + rng.range(3, 4.2) };
+      }
+    },
     update(time, dt) {
       if (!detailed || !detailed.visible) return;
-      for (const s of standing) {
-        const holding = s.person.pose === "strap";
-        // The coach's own sway, felt more by whoever is not holding on.
-        const give = holding ? 0.5 : 1;
-        s.object.rotation.x = Math.sin(time * 1.3 + s.phase) * 0.018 * give;
-        s.object.rotation.z = Math.sin(time * 0.8 + s.phase * 1.7) * 0.014 * give;
-        s.next -= dt;
-        if (s.next <= 0) {
-          s.next = rng.range(2.5, 7);
-          s.goalX = s.person.x + (holding ? rng.range(-0.04, 0.04) : rng.range(-0.12, 0.12));
-          s.goalTurn = holding ? rng.range(-0.15, 0.15) : rng.range(-0.55, 0.55);
-        }
-        const ease = 1 - Math.exp(-dt * 1.6);
-        s.object.position.x += (s.goalX - s.object.position.x) * ease;
-        s.turn += (s.goalTurn - s.turn) * (1 - Math.exp(-dt * 1.1));
-        s.object.rotation.y = s.person.facing + s.turn;
-      }
+      clock += dt;
       for (const w of walkers) {
         if (w.pause > 0) {
           w.pause -= dt;
@@ -184,6 +343,64 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
         w.object.position.set(w.x, 0, w.z);
         w.object.rotation.y = w.facing;
       }
+
+      for (const f of figures) {
+        const { person, holder } = f;
+        const holding = person.pose === "strap";
+        const passing = person.asleep ? undefined : walkers.find((w) => w.pause <= 0 && Math.abs(w.x - person.x) < 1.7);
+        if (!passing) f.curious = rng.chance(0.5);
+        if (f.watch && clock > f.watch.until) {
+          f.watch = null;
+          f.idle = 0.2;
+        }
+        if (f.watch && clock >= f.watch.from) lookAt(f, f.watch.who.x, f.watch.who.z, f.watch.who.low);
+        else if (passing && f.curious && !ON_PHONE.has(person.pose) && !f.watch) {
+          lookAt(f, passing.x, passing.z, false);
+          f.idle = 0.6;
+        } else if (dt > 0) idle(f, dt);
+
+        if (f.standing) {
+          // The coach's own sway, felt more by whoever is not holding on.
+          const give = holding ? 0.5 : 1;
+          holder.rotation.x = Math.sin(time * 1.3 + f.phase) * 0.018 * give;
+          holder.rotation.z = Math.sin(time * 0.8 + f.phase * 1.7) * 0.014 * give;
+          f.shift -= dt;
+          if (f.shift <= 0) {
+            f.shift = rng.range(2.5, 7);
+            f.goalX = person.x + (holding ? rng.range(-0.04, 0.04) : rng.range(-0.1, 0.1));
+          }
+          // Whoever stands in the walker's way gives a little ground.
+          f.goalZ = person.z + (passing && !holding && Math.abs(passing.x - person.x) < 0.9 ? Math.sign(person.z - passing.z || 1) * 0.09 : 0);
+          const ease = 1 - Math.exp(-dt * 1.6);
+          holder.position.x += (f.goalX - holder.position.x) * ease;
+          holder.position.z += (f.goalZ - holder.position.z) * ease;
+          f.turn += (f.goalTurn - f.turn) * (1 - Math.exp(-dt * 1.4));
+          holder.rotation.y = person.facing + f.turn;
+        } else if (person.asleep) {
+          // The whole body gives with the head, and breathes.
+          const sunk = f.droop < 1 ? f.droop : 0;
+          const want = -f.lean * (0.02 + 0.055 * sunk);
+          holder.rotation.z += (want - holder.rotation.z) * (1 - Math.exp(-dt * (f.droop < 1 ? 1 : 6)));
+          holder.rotation.x = 0.012 * Math.sin(time * 1.1 + f.phase);
+        }
+
+        // While a body or a head is turning it is drawn as a thing in motion, so it leaves no trail; at rest it settles into the picture again.
+        const turning = Math.abs(f.goalTurn - f.turn) > 0.06 || Math.abs(f.goalYaw - f.yaw) + Math.abs(f.goalPitch - f.pitch) > 0.05;
+        const drawnAs = turning ? moving : material;
+        if (f.parts[0] && f.parts[0].material !== drawnAs) for (const part of f.parts) part.material = drawnAs;
+
+        if (!f.head) continue;
+        const ease = 1 - Math.exp(-dt * f.brisk);
+        f.yaw += (f.goalYaw - f.yaw) * ease;
+        f.pitch += (f.goalPitch - f.pitch) * ease;
+        f.roll += (f.goalRoll - f.roll) * ease;
+        // Music keeps its own small time.
+        const nod = person.pose === "music" ? 0.035 * Math.sin(time * 6.2 + f.phase) : 0;
+        if (Math.abs(f.yaw - f.drawn[0]) + Math.abs(f.pitch + nod - f.drawn[1]) + Math.abs(f.roll - f.drawn[2]) > 0.004) {
+          f.drawn = [f.yaw, f.pitch + nod, f.roll];
+          f.head.pose(f.yaw, f.pitch + nod, f.roll);
+        }
+      }
     },
     pick(origin, direction) {
       let best = Infinity;
@@ -198,9 +415,8 @@ export function createRiders(car: TrainCar, crew: Passenger[], assets: Assets, m
           found = { hit: true, passenger };
         }
       };
-      for (const s of standing) test(s.object.position.x, s.object.position.z, s.person.headTop, s.person);
-      for (const person of crew) if (!STANDING.has(person.pose)) test(person.x, person.z, person.headTop, person);
-      if (!detailed) for (const person of crew) if (STANDING.has(person.pose)) test(person.x, person.z, person.headTop, person);
+      if (detailed) for (const f of figures) test(f.holder.position.x, f.holder.position.z, f.person.headTop, f.person);
+      else for (const person of crew) test(person.x, person.z, person.headTop, person);
       for (const w of walkers) test(w.x, w.z, 1.7, null);
       return found;
     },

@@ -47,7 +47,7 @@ const CRUISE = 10.5;
 const OPPOSING_SPEED = 10.5;
 let distance = debugNumber("at") ?? 4000 + (seed % 5000);
 void world.whenReady().then(() => sound.load());
-const traffic = createTraffic(pipeline.solid, assets, seed, distance);
+const traffic = createTraffic(pipeline.moving, assets, seed, distance);
 scene.add(traffic.group);
 let opposingX = -700;
 
@@ -82,7 +82,8 @@ const fullRatio = fixedRatio ?? Math.min(devicePixelRatio || 1, 2);
 let maxRatio = fullRatio;
 const quality = {
   ratio: integrated ? Math.min(maxRatio, 1) : maxRatio,
-  samples: debugNumber("msaa") ?? (integrated ? 2 : 4),
+  // The picture is steadied over time, which smooths edges too: integrated graphics spend nothing on multisampling.
+  samples: debugNumber("msaa") ?? (integrated ? 0 : 4),
   sum: 0,
   frames: 0,
   calm: 0,
@@ -160,8 +161,17 @@ const crews: Passenger[][] = train.cars.map((car) =>
 const cabCrew: Passenger[] = [operatorFor(assets, seed)];
 
 /** Every coach keeps a light crew for looking in through the windows, and a detailed, moving one for when it is opened. */
-const riders = train.cars.map((car) => createRiders(car, crews[car.index]!, assets, pipeline.solid, seed));
-const cabRiders = createRiders(train.cars[0]!, cabCrew, assets, pipeline.solid, seed, false);
+const riders = train.cars.map((car) => createRiders(car, crews[car.index]!, assets, pipeline, seed));
+const cabRiders = createRiders(train.cars[0]!, cabCrew, assets, pipeline, seed, false);
+// Once the city is up, each coach's detailed crew is built in a spare moment, one at a time, so a click never waits for it.
+void world.whenReady().then(() => {
+  const waiting = [...riders, cabRiders];
+  const next = (): void => {
+    waiting.shift()?.warm();
+    if (waiting.length) (window.requestIdleCallback ?? setTimeout)(next, { timeout: 1500 });
+  };
+  setTimeout(next, 1200);
+});
 
 // A second set on the other track carries no one close enough to see, only its light crew.
 opposing.cars.forEach((car, index) => {
@@ -184,6 +194,8 @@ interface Target {
   x0: number;
   x1: number;
   riders: Riders;
+  /** Everyone riding here, and those of them with something on their minds. */
+  crew: Passenger[];
   speakers: () => Passenger[];
 }
 
@@ -196,6 +208,7 @@ const targets: Target[] = [
     x0: -0.2,
     x1: cabEnd,
     riders: cabRiders,
+    crew: cabCrew,
     speakers: () => cabCrew,
   },
   ...train.cars.map((car) => ({
@@ -205,6 +218,7 @@ const targets: Target[] = [
     x0: car.index === 0 ? cabEnd : car.bounds.min.x,
     x1: car.bounds.max.x,
     riders: riders[car.index]!,
+    crew: crews[car.index]!,
     speakers: () => crews[car.index]!.filter((p) => p.thought),
   })),
 ];
@@ -238,10 +252,18 @@ const overlay = createOverlay(
 
 createMinimalSwitch(document.querySelector<HTMLElement>("#overlay")!, minimal, applyMinimal);
 
+let attended: Riders | null = null;
+
 function showThought(id: string | null): void {
   openBubbleId = id;
   overlay.openBubble(id);
   if (id) sound.thought();
+  // Whoever is thinking it shows it: a look at the one it is about, or up at nothing.
+  const thinker = id ? (shownBubbles?.crew.find((person) => person.id === id) ?? null) : null;
+  const among = thinker ? shownBubbles!.riders : null;
+  if (attended && attended !== among) attended.attend(null);
+  attended = among;
+  among?.attend(thinker);
 }
 
 const targetAt = (px: number, py: number): Target | null => {
@@ -592,7 +614,7 @@ function updateTags(dt: number): void {
     // The one who has just finished moves on to their next thought, for when we come back round.
     if (index >= 0 && list.length > 1) {
       const speaker = list[index]!;
-      speaker.thought = nextThought(shownBubbles.theme, speaker, thoughtRng);
+      speaker.thought = nextThought(shownBubbles.theme, speaker, shownBubbles.crew, thoughtRng);
       overlay.updateBubble(speaker);
     }
     showThought(list[(index + 1) % list.length]!.id);

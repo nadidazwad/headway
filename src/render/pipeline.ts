@@ -1,26 +1,32 @@
 import {
   Color,
   ColorManagement,
+  CustomBlending,
   DoubleSide,
   FloatType,
   GLSL3,
   HalfFloatType,
   LinearFilter,
   LinearSRGBColorSpace,
+  Matrix4,
   Mesh,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
   OrthographicCamera,
   PlaneGeometry,
   Scene,
   ShaderMaterial,
+  SrcAlphaFactor,
   Texture,
   UnsignedByteType,
   Vector2,
   Vector3,
   Vector4,
   WebGLRenderTarget,
+  ZeroFactor,
   WebGLRenderer,
 } from "three";
-import { compositeFragment, fullscreenVertex, lineFragment, lineVertex, solidFragment, solidVertex } from "./shaders";
+import { compositeFragment, fullscreenVertex, lineFragment, lineVertex, showFragment, solidFragment, solidVertex, steadyFragment } from "./shaders";
 import { createShadows, type ShadowFrame } from "./shadow";
 
 export interface CutPlane {
@@ -33,12 +39,16 @@ export interface Pipeline {
   renderer: WebGLRenderer;
   /** The grey material every part of the city and its people use. */
   solid: ShaderMaterial;
+  /** The same grey, for what moves by itself against the train or the city: traffic, people on foot. */
+  moving: ShaderMaterial;
   /** The train's own material: the one thing in the world that keeps its colour. */
   colored: ShaderMaterial;
   /** A coloured copy whose geometry can be cut away by a moving plane. */
   cuttable(): ShaderMaterial;
   /** The material for thin parts; whatever is added to `lineScene` is drawn with the ink, after it. */
   lineMaterial: ShaderMaterial;
+  /** The same for thin parts that ride with the train rather than slide past with the city. */
+  trainLineMaterial: ShaderMaterial;
   lineScene: Scene;
   setCut(material: ShaderMaterial, cut: CutPlane | null): void;
   setAtlas(texture: Texture): void;
@@ -135,6 +145,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     uFocusDepth: { value: 0 },
     uLineWrap: { value: 0 },
     uPlain: { value: 0 },
+    uCalm: { value: 0 },
   };
 
   const solid = new ShaderMaterial({
@@ -147,6 +158,7 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uCutPlane: { value: new Vector4() },
       uCutEnabled: { value: 0 },
       uNeutral: { value: 1 },
+      uMover: { value: 0 },
       ...shadows.uniforms,
     },
   });
@@ -157,11 +169,14 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     material.uniforms.uFocusDepth = shared.uFocusDepth;
     material.uniforms.uLineWrap = shared.uLineWrap;
     material.uniforms.uPlain = shared.uPlain;
+    material.uniforms.uCalm = shared.uCalm;
     Object.assign(material.uniforms, shadows.uniforms);
     material.uniforms.uNeutral!.value = neutral;
     return material;
   };
   const colored = copy(0);
+  const moving = copy(1);
+  moving.uniforms.uMover!.value = 1;
 
   const cuttable = (): ShaderMaterial => copy(0);
 
@@ -183,32 +198,101 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       uEdge: { value: new Vector4(...EDGE) },
       uSoften: { value: 0 },
       uFineInk: { value: 0.6 },
+      uCalm: shared.uCalm,
       uFocus: { value: new Vector3() },
       uRight: { value: new Vector3() },
       uUp: { value: new Vector3() },
       uForward: { value: new Vector3() },
     },
   });
+  const lineUniforms = {
+    uColor: composite.uniforms.uColor!,
+    uData: composite.uniforms.uData!,
+    uHaze: composite.uniforms.uHaze!,
+    uEdge: composite.uniforms.uEdge!,
+    uForward: composite.uniforms.uForward!,
+    uFocusDepth: shared.uFocusDepth,
+    uCalm: shared.uCalm,
+    uPixel: { value: 0.04 },
+    uLineWidth: { value: 1.5 },
+  };
   const lineMaterial = new ShaderMaterial({
     glslVersion: GLSL3,
     vertexShader: lineVertex,
     fragmentShader: lineFragment,
     transparent: true,
     side: DoubleSide,
-    uniforms: {
-      uColor: composite.uniforms.uColor!,
-      uData: composite.uniforms.uData!,
-      uHaze: composite.uniforms.uHaze!,
-      uEdge: composite.uniforms.uEdge!,
-      uForward: composite.uniforms.uForward!,
-      uFocusDepth: shared.uFocusDepth,
-      uPixel: { value: 0.04 },
-      uLineWidth: { value: 1.5 },
-    },
+    uniforms: lineUniforms,
+    // A line has no depth for the steadying pass to place it by. One that slides with the city says so
+    // in the picture's alpha, which it wears away where it is drawn.
+    blending: CustomBlending,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: ZeroFactor,
+    blendDstAlpha: OneMinusSrcAlphaFactor,
+  });
+  const trainLineMaterial = new ShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: lineVertex,
+    fragmentShader: lineFragment,
+    transparent: true,
+    side: DoubleSide,
+    uniforms: lineUniforms,
+    blending: CustomBlending,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: ZeroFactor,
+    blendDstAlpha: OneFactor,
   });
   const lineScene = new Scene();
   const fullscreenScene = new Scene();
-  fullscreenScene.add(new Mesh(new PlaneGeometry(2, 2), composite));
+  const fullscreen = new Mesh(new PlaneGeometry(2, 2), composite);
+  fullscreenScene.add(fullscreen);
+
+  // The inked frame, and the steadied picture of this frame and of the one before.
+  const inked = new WebGLRenderTarget(2, 2, { depthBuffer: true, stencilBuffer: false });
+  const steadied = [new WebGLRenderTarget(2, 2, { depthBuffer: false }), new WebGLRenderTarget(2, 2, { depthBuffer: false })];
+  for (const each of steadied) {
+    each.texture.minFilter = LinearFilter;
+    each.texture.magFilter = LinearFilter;
+  }
+  const steady = new ShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: fullscreenVertex,
+    fragmentShader: steadyFragment,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: {
+      uNow: { value: inked.texture },
+      uPast: { value: steadied[0]!.texture },
+      uColor: composite.uniforms.uColor!,
+      uData: composite.uniforms.uData!,
+      uPastClip: { value: new Matrix4() },
+      uSlide: { value: 0 },
+      uFresh: { value: 1 },
+      uFocus: composite.uniforms.uFocus!,
+      uRight: composite.uniforms.uRight!,
+      uUp: composite.uniforms.uUp!,
+      uForward: composite.uniforms.uForward!,
+    },
+  });
+  const show = new ShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: fullscreenVertex,
+    fragmentShader: showFragment,
+    depthTest: false,
+    depthWrite: false,
+    uniforms: { uNow: { value: steadied[0]!.texture } },
+  });
+  /** How much of each new frame goes into the picture. The rest is the frames before it. */
+  const FRESH = 0.2;
+  /** Where in its pixel each frame is drawn: eight places that between them cover it evenly. */
+  const NUDGES = [[0, -1 / 6], [-0.25, 1 / 6], [0.25, -7 / 18], [-0.375, -1 / 18], [0.125, 5 / 18], [-0.125, -5 / 18], [0.375, 1 / 18], [-0.4375, 7 / 18]] as const;
+  const steadyOn = !(import.meta.env.DEV && new URLSearchParams(location.search).get("steady") === "0");
+  let frameCount = 0;
+  let pastValid = false;
+  let slide = 0;
+  let lastDistance: number | null = null;
   const fullscreenCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   const stats = { shadowTriangles: 0, mainTriangles: 0, staticTriangles: 0, shadowMs: 0, mainMs: 0, shadowCalls: 0, mainCalls: 0, gpu: {} as Record<string, number> };
@@ -223,6 +307,9 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     const width = Math.max(2, Math.round(cssWidth * pixelRatio));
     const height = Math.max(2, Math.round(cssHeight * pixelRatio));
     target.setSize(width, height);
+    inked.setSize(width, height);
+    for (const each of steadied) each.setSize(width, height);
+    pastValid = false;
     composite.uniforms.uTexel!.value.set(1 / width, 1 / height);
     composite.uniforms.uLineScale!.value = Math.max(0.6, pixelRatio * 0.5);
   };
@@ -230,9 +317,11 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
   return {
     renderer,
     solid,
+    moving,
     colored,
     cuttable,
     lineMaterial,
+    trainLineMaterial,
     lineScene,
     setCut(material, cut) {
       if (!cut) {
@@ -246,6 +335,8 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       shared.uAtlas.value = texture;
     },
     setDistance(metres) {
+      slide += lastDistance === null ? 0 : metres - lastDistance;
+      lastDistance = metres;
       shared.uLineWrap.value = ((metres % 1024) + 1024) % 1024;
     },
     setHaze(start, end) {
@@ -259,13 +350,17 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
     setViewWidth(metres) {
       const t = Math.min(1, Math.max(0, (metres - 20) / 70));
       composite.uniforms.uFineInk!.value = 0.8 - 0.42 * t;
+      // Up close everything is drawn at full weight; by the wide view the city has gone quiet behind the train.
+      const calm = Math.min(1, Math.max(0, (metres - 24) / 30));
+      shared.uCalm.value = calm * calm * (3 - 2 * calm);
     },
     setPixelRatio(ratio) {
       pixelRatio = ratio;
       applySize();
     },
     setSamples(samples) {
-      composite.uniforms.uSoften!.value = samples === 0 ? 1 : 0;
+      // Without multisampling the composite softens edges itself, unless the steadying pass is there to do it better.
+      composite.uniforms.uSoften!.value = samples === 0 && !steadyOn ? 1 : 0;
       if (target.samples === samples) return;
       target.samples = samples;
       target.dispose();
@@ -296,6 +391,14 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       stats.shadowTriangles = renderer.info.render.triangles;
       stats.shadowCalls = renderer.info.render.calls;
       stats.staticTriangles = shadows.staticTriangles;
+      // Each frame is drawn a fraction of a pixel off the last, so that together they see between the pixels.
+      const projection = camera.projectionMatrix.elements;
+      const [restX, restY] = [projection[12]!, projection[13]!];
+      const nudge = NUDGES[frameCount++ % NUDGES.length]!;
+      if (steadyOn) {
+        projection[12] = restX + (nudge[0] * 2) / target.width;
+        projection[13] = restY + (nudge[1] * 2) / target.height;
+      }
       renderer.setRenderTarget(target);
       timer.begin("main");
       renderer.clear(true, true, false);
@@ -304,8 +407,9 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       stats.mainTriangles = renderer.info.render.triangles;
       stats.mainCalls = renderer.info.render.calls;
       stats.mainMs = performance.now() - t0 - stats.shadowMs;
-      renderer.setRenderTarget(null);
+      renderer.setRenderTarget(steadyOn ? inked : null);
       timer.begin("composite");
+      fullscreen.material = composite;
       renderer.render(fullscreenScene, fullscreenCamera);
       timer.end();
       timer.begin("lines");
@@ -313,6 +417,26 @@ export function createPipeline(canvas: HTMLCanvasElement): Pipeline {
       renderer.clearDepth();
       renderer.render(lineScene, camera);
       timer.end();
+      projection[12] = restX;
+      projection[13] = restY;
+      if (steadyOn) {
+        timer.begin("steady");
+        const [past, next] = frameCount % 2 ? [steadied[0]!, steadied[1]!] : [steadied[1]!, steadied[0]!];
+        steady.uniforms.uPast!.value = past.texture;
+        steady.uniforms.uSlide!.value = slide;
+        steady.uniforms.uFresh!.value = pastValid ? FRESH : 1;
+        fullscreen.material = steady;
+        renderer.setRenderTarget(next);
+        renderer.render(fullscreenScene, fullscreenCamera);
+        show.uniforms.uNow!.value = next.texture;
+        fullscreen.material = show;
+        renderer.setRenderTarget(null);
+        renderer.render(fullscreenScene, fullscreenCamera);
+        timer.end();
+        steady.uniforms.uPastClip!.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        pastValid = true;
+      }
+      slide = 0;
       timer.collect(stats.gpu);
     },
     get pixelRatio() {

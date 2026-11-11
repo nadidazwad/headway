@@ -89,7 +89,7 @@ export function createTrain(pipeline: Pipeline, trackZ = TRACK_Z): Train {
         detail.frustumCulled = false;
         carGroup.add(detail);
         if (built.lines) {
-          detailLines = new Mesh(built.lines, pipeline.lineMaterial);
+          detailLines = new Mesh(built.lines, pipeline.trainLineMaterial);
           detailLines.frustumCulled = false;
           detailLines.matrixAutoUpdate = false;
           pipeline.lineScene.add(detailLines);

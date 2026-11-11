@@ -1,4 +1,5 @@
 import { LINE_RADIUS_RANGE } from "../geometry";
+import { RAIL_Y, TRACK_Z } from "../world/layout";
 
 /**
  * Weathering for the grey city: each surface kind gets the marks that make it read as real in
@@ -282,6 +283,8 @@ uniform vec4 uCutPlane;
 uniform float uCutEnabled;
 uniform float uNeutral;
 uniform float uPlain;
+uniform float uCalm;
+uniform float uMover;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outData;
 
@@ -357,8 +360,10 @@ void main() {
     value = printed ? 0.2 + 0.8 * value : figure ? 0.14 + 0.86 * pow(value, 0.85) : leafy || vSurface < 1.5 && vSurface > 0.5 ? 0.2 + 0.8 * pow(value, 0.8) : 0.42 + 0.58 * pow(value, 0.7);
     // With no shadows to sit in, a crown's leaves would be bright shards: minimal mode settles them into one soft grey.
     if (uPlain > 0.5 && leafy) value = mix(0.7, value, 0.42);
+    // From far off a crown is one mass: its leaves keep their place but give up most of their sparkle.
+    else if (leafy) value = mix(value, mix(0.74, value, 0.5), uCalm);
     #ifndef NO_WEATHER
-    value *= leafy ? 1.0 + smallest.y * 0.3 : uPlain > 0.5 ? 1.0 : weathering(vSurface, vLine, n);
+    value *= leafy ? 1.0 + smallest.y * 0.3 : uPlain > 0.5 ? 1.0 : mix(weathering(vSurface, vLine, n), 1.0, 0.55 * uCalm);
     #endif
     // Leaves keep the full fall of light across a crown; built things are flattened towards paper.
     float flatten = leafy || (vSurface > 0.5 && vSurface < 1.5) ? 0.12 : 0.36;
@@ -370,7 +375,8 @@ void main() {
 
   outColor = vec4(lit, 1.0);
   vec3 nv = normalize(vNormalView);
-  outData = vec4(nv.xy, vDepth, vPart + 0.002);
+  // Whatever moves by itself, on wheels or on foot, signs its part mark: the steadying pass cannot know where it was.
+  outData = vec4(nv.xy, vDepth, (vPart + 0.002) * (uMover > 0.5 ? -1.0 : 1.0));
 }
 `;
 
@@ -427,6 +433,7 @@ uniform sampler2D uColor;
 uniform sampler2D uData;
 uniform vec2 uHaze;
 uniform vec4 uEdge;
+uniform float uCalm;
 layout(location = 0) out vec4 outColor;
 
 void main() {
@@ -451,6 +458,8 @@ void main() {
   behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
   float far = max(smoothstep(uEdge.x, uEdge.y, vWorldZ), smoothstep(uEdge.z, uEdge.w, -vWorldZ));
   float alpha = edge * mix(0.42, 1.0, vDensity) * (1.0 - max(min(behind, 0.965), far));
+  // Away from the line, wires and railings go as light as the rest of a wide view's city.
+  alpha *= mix(1.0, 0.6, uCalm * smoothstep(4.0, 7.0, abs(vWorldZ)));
   if (alpha < 0.004) discard;
   outColor = vec4(colour, alpha);
 }
@@ -478,6 +487,7 @@ uniform vec2 uHaze;
 uniform vec4 uEdge;
 uniform float uSoften;
 uniform float uFineInk;
+uniform float uCalm;
 uniform vec3 uFocus;
 uniform vec3 uRight;
 uniform vec3 uUp;
@@ -504,6 +514,14 @@ void main() {
   float normalLine = smoothstep(0.42, 1.05, length(l.xy - r.xy) + length(d.xy - u.xy));
   float partLine = smoothstep(0.0015, 0.005, abs(l.w - r.w) + abs(d.w - u.w)) * uFineInk;
   float line = max(depthLine * 0.9, max(normalLine * 0.75, partLine));
+  float coverage = color.a;
+  float depth = coverage > 0.001 ? c.z / coverage : 0.0;
+  vec3 world = uFocus + uRight * (vUv.x * 2.0 - 1.0) + uUp * (vUv.y * 2.0 - 1.0) + uForward * depth;
+  // From far off the city is pencil and the train is ink: only an edge with real depth behind it, a building
+  // against the street or the sky, keeps its full weight. Sills, panes and mouldings go light, or a wide view is all line.
+  bool onTrain = abs(abs(world.z) - TRAIN_Z) < 1.8 && world.y > TRAIN_Y - 0.3 && world.y < TRAIN_Y + 6.0;
+  float jump = max(abs(l.z + r.z - 2.0 * c.z), abs(d.z + u.z - 2.0 * c.z));
+  if (!onTrain) line *= mix(1.0, mix(0.4, 1.0, smoothstep(0.5, 2.5, jump)), uCalm);
   // Leaves are drawn by their tone: inside a crown the ink all but disappears, and round each leaf's own edge it stays light.
   // A leaf's mark is 2: filtered against the sky it still reads over 1, which no other part ever does.
   if (max(c.w, max(l.w, max(r.w, max(d.w, u.w)))) > 1.02) line *= min(c.w, min(l.w, min(r.w, min(d.w, u.w)))) > 1.9 ? 0.06 : 0.16;
@@ -517,13 +535,11 @@ void main() {
     }
   }
 
-  float coverage = color.a;
+  coverage = color.a;
   vec3 solid = coverage > 0.001 ? color.rgb / coverage : vec3(0.0);
   vec3 sky = mix(uSkyBottom, uSkyTop, smoothstep(0.0, 1.0, vUv.y));
 
   // Haze grows with distance from the line itself, so the train never fades along its own length.
-  float depth = coverage > 0.001 ? c.z / coverage : 0.0;
-  vec3 world = uFocus + uRight * (vUv.x * 2.0 - 1.0) + uUp * (vUv.y * 2.0 - 1.0) + uForward * depth;
   float behind = smoothstep(uHaze.x, uHaze.y, -world.z);
   behind = 1.0 - (1.0 - behind) * (1.0 - behind * 0.15);
   // Both edges of the generated city dissolve into the paper rather than stopping.
@@ -533,5 +549,105 @@ void main() {
   vec3 scene = mix(inked, sky, haze);
   vec3 finalColor = mix(sky, scene, coverage);
   outColor = vec4(finalColor, 1.0);
+}
+`
+  .replace(/TRAIN_Z/g, TRACK_Z.toFixed(2))
+  .replace(/TRAIN_Y/g, RAIL_Y.toFixed(2));
+
+/**
+ * Steadies the picture over time. A line a pixel wide lands on a different part of the pixel grid in
+ * every frame of a sliding city, and so twinkles; here each frame is laid over the last one, moved to
+ * where it now belongs. The city's slide is known exactly, so nothing has to be guessed.
+ */
+export const steadyFragment = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uNow;
+uniform sampler2D uPast;
+uniform sampler2D uColor;
+uniform sampler2D uData;
+uniform mat4 uPastClip;
+uniform float uSlide;
+uniform float uFresh;
+uniform vec3 uFocus;
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uForward;
+layout(location = 0) out vec4 outColor;
+
+/** The past picture, read with a sharp filter: a plain one would blur a sliding city a little more every frame. */
+vec3 pastAt(vec2 uv) {
+  vec2 size = vec2(textureSize(uPast, 0));
+  vec2 p = uv * size;
+  vec2 c = floor(p - 0.5) + 0.5;
+  vec2 f = p - c;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 t0 = (c - 1.0) / size;
+  vec2 t3 = (c + 2.0) / size;
+  vec2 t12 = (c + w2 / w12) / size;
+  vec4 sum = vec4(texture(uPast, vec2(t12.x, t0.y)).rgb, 1.0) * (w12.x * w0.y)
+    + vec4(texture(uPast, vec2(t0.x, t12.y)).rgb, 1.0) * (w0.x * w12.y)
+    + vec4(texture(uPast, t12).rgb, 1.0) * (w12.x * w12.y)
+    + vec4(texture(uPast, vec2(t3.x, t12.y)).rgb, 1.0) * (w3.x * w12.y)
+    + vec4(texture(uPast, vec2(t12.x, t3.y)).rgb, 1.0) * (w12.x * w3.y);
+  return max(sum.rgb / sum.a, 0.0);
+}
+
+void main() {
+  ivec2 pixel = ivec2(gl_FragCoord.xy);
+  vec4 inked = texelFetch(uNow, pixel, 0);
+  vec3 now = inked.rgb;
+  float coverage = texture(uColor, vUv).a;
+  // Sky has no depth of its own. It is taken to slide with the city, since what crosses it, wires and masts, does.
+  float depth = coverage > 0.5 ? texture(uData, vUv).z / coverage : 0.0;
+  vec3 world = uFocus + uRight * (vUv.x * 2.0 - 1.0) + uUp * (vUv.y * 2.0 - 1.0) + uForward * depth;
+  bool onTrain = coverage > 0.5 && abs(world.z - TRAIN_Z) < 1.8 && world.y > TRAIN_Y + 0.08 && world.y < TRAIN_Y + 6.0;
+  // A thin part of the city, a mast or a wire, slides even where it crosses the train.
+  float rides = onTrain && inked.a >= 0.7 ? 1.0 : 0.0;
+  if (rides < 0.5) world.x -= uSlide;
+  vec4 clip = uPastClip * vec4(world, 1.0);
+  vec2 past = clip.xy / clip.w * 0.5 + 0.5;
+  float fresh = uFresh;
+  // Something moving by itself is drawn as it is now, and so is the ground it has just left.
+  float mark = texelFetch(uData, pixel, 0).w;
+  float around = min(min(texelFetch(uData, pixel + ivec2(2, 0), 0).w, texelFetch(uData, pixel - ivec2(2, 0), 0).w), min(texelFetch(uData, pixel + ivec2(0, 2), 0).w, texelFetch(uData, pixel - ivec2(0, 2), 0).w));
+  if (mark < 0.0) fresh = 1.0;
+  else if (around < 0.0) fresh = max(fresh, 0.6);
+  if (any(lessThan(past, vec2(0.0))) || any(greaterThan(past, vec2(1.0)))) fresh = 1.0;
+  // The picture remembers which of the two each pixel was, train or city. Where a mast has just swept
+  // across the train, or the train has just been uncovered, the past shows the other one and is dropped.
+  if (abs(texture(uPast, past).a - rides) > 0.3) fresh = 1.0;
+
+  // Whatever moved some other way, a car, a walker, the other train, is not where the past has it:
+  // the past may only say what this pixel's own surroundings could say now.
+  vec3 low = now;
+  vec3 high = now;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      if (x == 0 && y == 0) continue;
+      vec3 near = texelFetch(uNow, pixel + ivec2(x, y), 0).rgb;
+      low = min(low, near);
+      high = max(high, near);
+    }
+  }
+  vec3 room = (high - low) * 0.2 + 0.012;
+  vec3 before = clamp(pastAt(past), low - room, high + room);
+  outColor = vec4(mix(before, now, fresh), rides);
+}
+`
+  .replace(/TRAIN_Z/g, TRACK_Z.toFixed(2))
+  .replace(/TRAIN_Y/g, RAIL_Y.toFixed(2));
+
+export const showFragment = /* glsl */ `
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uNow;
+layout(location = 0) out vec4 outColor;
+void main() {
+  outColor = vec4(texelFetch(uNow, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
 }
 `;
